@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { ITEMS, RUN_LENGTH, xpToNext } from '../game/data';
-import { COLORS } from '../game/palette';
+import { EVOLUTIONS, ITEMS, RUN_LENGTH, WEAPON_IDS, xpToNext } from '../game/data';
+import { COLORS, hex } from '../game/palette';
 import { sfx } from '../game/audio';
 import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
@@ -85,7 +85,7 @@ export class UIScene extends Phaser.Scene {
     this.killText.setX(w - 66);
     this.goldText.setX(w - 66);
     this.pauseBtn.setPosition(w - 32, 32);
-    this.bannerText.setPosition(w / 2, h * 0.26);
+    this.bannerText.setPosition(w / 2, h * 0.26).setWordWrapWidth(w - 32, true).setAlign('center');
 
     const v = this.vignette;
     v.clear();
@@ -116,7 +116,8 @@ export class UIScene extends Phaser.Scene {
     this.killText.setText(`击杀 ${gs.kills}`);
     this.goldText.setText(`金币 ${gs.coins}`);
 
-    const sig = [...gs.itemLevels.entries()].map(([k, v]) => k + v).join(',');
+    const sig = [...gs.itemLevels.entries()].map(([k, v]) => k + v).join(',')
+      + gs.weapons.map((w) => (w.evolved ? 'E' : '')).join('');
     if (sig !== this.iconSig) {
       this.iconSig = sig;
       this.buildIcons();
@@ -152,15 +153,25 @@ export class UIScene extends Phaser.Scene {
         .setOrigin(1, 1).setStroke('#07060f', 3);
       this.icons.add([img, lv]);
     };
-    gs.weapons.forEach((wp, i) => put(wp.id, wp.level, i, 0));
+    gs.weapons.forEach((wp, i) => {
+      if (!wp.evolved) return put(wp.id, wp.level, i, 0);
+      const x = i * (size + gap) + size / 2;
+      const y = size / 2;
+      this.icons.add([
+        this.add.image(x, y, EVOLUTIONS[wp.id].icon).setDisplaySize(size, size),
+        this.add.text(x + size / 2 - 2, y + size / 2 - 1, '★', style(11, COLORS.elite, true)).setOrigin(1, 1).setStroke('#07060f', 3),
+      ]);
+    });
     gs.passiveOrder.forEach((id, i) => put(id, gs.itemLevels.get(id) ?? 0, i, 1));
   }
 
-  banner(text: string, big = false) {
+  banner(text: string, big = false, color?: number) {
     const b = this.bannerText;
     this.tweens.killTweensOf(b);
-    b.setText(text).setFontSize(big ? 38 : 30).setColor(big ? '#ff5c8a' : '#ffd24d');
-    glowText(b, big ? COLORS.boss : COLORS.coin, 16);
+    const c = color ?? (big ? COLORS.boss : COLORS.coin);
+    const narrow = this.scale.width < 600;
+    b.setText(text).setFontSize(big ? (narrow ? 28 : 38) : narrow ? 20 : 28).setColor(hex(c));
+    glowText(b, c, 16);
     b.setAlpha(0).setScale(0.8);
     this.tweens.add({ targets: b, alpha: 1, scale: 1, duration: 250, ease: 'Back.Out' });
     this.tweens.add({ targets: b, alpha: 0, delay: 2200, duration: 500 });
@@ -281,23 +292,23 @@ export class UIScene extends Phaser.Scene {
     rebuild();
   }
 
-  showLevelUp(kind: 'level' | 'chest', options: UpgradeOption[], onPick: (o: UpgradeOption) => void) {
+  showLevelUp(kind: 'level' | 'chest' | 'evolve', options: UpgradeOption[], onPick: (o: UpgradeOption) => void) {
     const openedAt = this.time.now;
     let first = true;
     this.openModal('level', (c, w, h) => {
       const narrow = w < 780;
-      const title = kind === 'chest' ? '宝箱！' : '升级！';
-      const tColor = kind === 'chest' ? COLORS.chest : COLORS.xp;
+      const title = kind === 'evolve' ? '进化！' : kind === 'chest' ? '宝箱！' : '升级！';
+      const tColor = kind === 'evolve' ? COLORS.elite : kind === 'chest' ? COLORS.chest : COLORS.xp;
       const titleY = narrow ? Math.max(50, h * 0.12) : h * 0.18;
       c.add(glowText(this.add.text(w / 2, titleY, title, style(narrow ? 34 : 44, tColor, true)).setOrigin(0.5), tColor, 18));
-      c.add(this.add.text(w / 2, titleY + (narrow ? 32 : 42), narrow ? '点击选择一项强化' : '选择一项强化  ·  按 1 / 2 / 3 快速选择', style(15, COLORS.dim)).setOrigin(0.5));
+      c.add(this.add.text(w / 2, titleY + (narrow ? 32 : 42), kind === 'evolve' ? '武器与被动产生共鸣，突破极限' : narrow ? '点击选择一项强化' : '选择一项强化  ·  按 1 / 2 / 3 快速选择', style(15, COLORS.dim)).setOrigin(0.5));
 
       const cards: Phaser.GameObjects.Container[] = [];
       options.forEach((opt, i) => {
         let cw: number, ch: number, cx: number, cy: number;
         if (narrow) {
           cw = Math.min(460, w - 32);
-          ch = 104;
+          ch = 116;
           cx = w / 2;
           const top = titleY + 70;
           cy = top + ch / 2 + i * (ch + 12);
@@ -350,13 +361,19 @@ export class UIScene extends Phaser.Scene {
       card.setScale(1);
     });
 
-    const lvlColor = opt.isNew ? COLORS.coin : COLORS.dim;
+    const evolve = opt.id === 'evolve';
+    if (evolve) {
+      bg.setStrokeStyle(3, COLORS.elite, 1);
+      this.tweens.add({ targets: glow, fillAlpha: 0.14, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+    }
+    const lvlColor = evolve ? COLORS.elite : opt.isNew ? COLORS.coin : COLORS.dim;
     if (narrow) {
       const left = -cw / 2;
       card.add(this.add.image(left + 46, 0, opt.icon).setDisplaySize(60, 60));
       card.add(glowText(this.add.text(left + 88, -ch / 2 + 14, opt.name, style(20, opt.color, true)), opt.color, 8));
       card.add(this.add.text(cw / 2 - 14, -ch / 2 + 17, opt.levelText, style(14, lvlColor, true)).setOrigin(1, 0));
-      card.add(this.add.text(left + 88, -ch / 2 + 46, opt.desc, { ...style(15, COLORS.text), wordWrap: { width: cw - 110, useAdvancedWrap: true } }));
+      card.add(this.add.text(left + 88, -ch / 2 + 44, opt.desc, { ...style(15, COLORS.text), wordWrap: { width: cw - 110, useAdvancedWrap: true } }));
+      if (opt.hint) card.add(this.add.text(left + 88, ch / 2 - 9, opt.hint, style(12, COLORS.elite)).setOrigin(0, 1));
       card.add(this.add.text(cw / 2 - 10, ch / 2 - 8, `[${index + 1}]`, style(12, COLORS.dim)).setOrigin(1, 1));
     } else {
       card.add(this.add.image(0, -ch / 2 + 70, opt.icon).setDisplaySize(84, 84));
@@ -365,6 +382,11 @@ export class UIScene extends Phaser.Scene {
       card.add(this.add.text(0, -ch / 2 + 200, opt.desc, {
         ...style(16, COLORS.text), align: 'center', wordWrap: { width: cw - 36, useAdvancedWrap: true },
       }).setOrigin(0.5, 0));
+      if (opt.hint) {
+        card.add(this.add.text(0, ch / 2 - 44, opt.hint, {
+          ...style(13, COLORS.elite), align: 'center', wordWrap: { width: cw - 30, useAdvancedWrap: true },
+        }).setOrigin(0.5, 1));
+      }
       card.add(this.add.text(0, ch / 2 - 20, `[ ${index + 1} ]`, style(14, COLORS.dim)).setOrigin(0.5));
     }
     return card;
@@ -381,7 +403,8 @@ export class UIScene extends Phaser.Scene {
       const cell = 58;
       const perRow = Math.max(1, Math.floor((pw - 40) / cell));
       const rows = Math.max(1, Math.ceil(items.length / perRow));
-      const ph = Math.min(h - 40, 110 + rows * 66 + 190);
+      const recipeH = 34 + WEAPON_IDS.length * 21;
+      const ph = Math.min(h - 40, 110 + rows * 66 + recipeH + 190);
       c.add(panel(this, w / 2, h / 2, pw, ph));
       const top = h / 2 - ph / 2;
       c.add(glowText(this.add.text(w / 2, top + 40, '暂停', style(36, COLORS.player, true)).setOrigin(0.5), COLORS.player, 14));
@@ -393,9 +416,34 @@ export class UIScene extends Phaser.Scene {
         const rowCount = Math.min(perRow, items.length - row * perRow);
         const x = w / 2 - ((rowCount - 1) * cell) / 2 + col * cell;
         const y = top + 104 + row * 66;
+        const evolved = gs.weapons.find((wp) => wp.id === id)?.evolved;
         const maxed = lvl >= def.maxLevel;
-        c.add(this.add.image(x, y, def.icon).setDisplaySize(44, 44));
-        c.add(this.add.text(x, y + 31, maxed ? 'MAX' : `Lv ${lvl}`, style(12, maxed ? COLORS.coin : COLORS.dim, maxed)).setOrigin(0.5));
+        const icon = evolved ? EVOLUTIONS[id as keyof typeof EVOLUTIONS].icon : def.icon;
+        c.add(this.add.image(x, y, icon).setDisplaySize(44, 44));
+        c.add(this.add.text(x, y + 31, evolved ? '进化' : maxed ? 'MAX' : `Lv ${lvl}`, style(12, evolved ? COLORS.elite : maxed ? COLORS.coin : COLORS.dim, maxed)).setOrigin(0.5));
+      });
+
+      // evolution recipes: what each weapon needs, with live progress
+      const recipeTop = top + 104 + rows * 66 - 4;
+      c.add(this.add.text(w / 2, recipeTop, '进化配方（武器满级 + 对应被动，打开宝箱时进化）', style(12, COLORS.dim)).setOrigin(0.5, 0));
+      WEAPON_IDS.forEach((id, i) => {
+        const evo = EVOLUTIONS[id];
+        const wp = gs.weapons.find((x) => x.id === id);
+        const y = recipeTop + 22 + i * 21;
+        let status: string;
+        let color: number = COLORS.dim;
+        if (wp?.evolved) {
+          status = '★ 已进化';
+          color = COLORS.elite;
+        } else {
+          const maxed = !!wp && wp.level >= ITEMS[id].maxLevel;
+          const hasPassive = gs.itemLevels.has(evo.passive);
+          status = `满级${maxed ? '✓' : '✗'}  ${ITEMS[evo.passive].name}${hasPassive ? '✓' : '✗'}`;
+          if (maxed && hasPassive) color = COLORS.coin;
+          else if (wp) color = COLORS.text;
+        }
+        c.add(this.add.text(w / 2 - pw / 2 + 28, y, `${ITEMS[id].name} → ${evo.name}`, style(13, wp ? evo.color : COLORS.dim)).setAlpha(wp ? 1 : 0.6));
+        c.add(this.add.text(w / 2 + pw / 2 - 28, y, status, style(13, color)).setOrigin(1, 0).setAlpha(wp ? 1 : 0.6));
       });
 
       const s = gs.stats;
@@ -448,7 +496,7 @@ export class UIScene extends Phaser.Scene {
       const rows = r.damage.slice(0, Math.max(1, Math.floor((ph - 360) / 34)));
       rows.forEach((d, i) => {
         const y = dmgTop + 36 + i * 34;
-        const def = ITEMS[d.id];
+        const def = d.evolved ? EVOLUTIONS[d.id] : ITEMS[d.id];
         const left = w / 2 - pw / 2 + 40;
         c.add(this.add.image(left + 12, y, def.icon).setDisplaySize(26, 26));
         c.add(this.add.text(left + 32, y, def.name, style(14, COLORS.text)).setOrigin(0, 0.5));

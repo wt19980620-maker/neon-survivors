@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  ENEMY_DEFS, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
+  ENEMY_DEFS, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
   type EnemyKind, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import { COLORS, FONT } from '../game/palette';
@@ -33,13 +33,17 @@ export interface Stats {
 }
 
 export interface UpgradeOption {
-  id: ItemId | 'heal' | 'gold';
+  id: ItemId | 'heal' | 'gold' | 'evolve';
   name: string;
   icon: string;
   color: number;
   isNew: boolean;
   levelText: string;
   desc: string;
+  /** small gold line under the description, e.g. evolution recipe */
+  hint?: string;
+  /** set when id === 'evolve' */
+  evolve?: WeaponId;
 }
 
 export interface RunResult {
@@ -50,7 +54,7 @@ export interface RunResult {
   gold: number;
   totalGold: number;
   newBest: boolean;
-  damage: { id: WeaponId; value: number }[];
+  damage: { id: WeaponId; value: number; evolved: boolean }[];
 }
 
 type ModalKind = 'level' | 'chest';
@@ -94,6 +98,7 @@ export class GameScene extends Phaser.Scene {
   private emitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private damageBy = new Map<WeaponId, number>();
   private pendingModals: ModalKind[] = [];
+  private evoAnnounced = new Set<WeaponId>();
   private invuln = 0;
   private reviveUsed = false;
   private endTimer = 0;
@@ -196,6 +201,7 @@ export class GameScene extends Phaser.Scene {
     this.emitters = new Map();
     this.damageBy = new Map();
     this.pendingModals = [];
+    this.evoAnnounced = new Set();
     this.invuln = 0;
     this.reviveUsed = false;
     this.endTimer = 0;
@@ -763,12 +769,59 @@ export class GameScene extends Phaser.Scene {
     this.state = 'modal';
     this.scene.pause();
     sfx.play(kind === 'chest' ? 'chest' : 'levelup');
-    ui.showLevelUp(kind, this.rollOptions(), (opt) => {
+    // a chest always evolves when something is ready — that's what chests are for
+    const evo = kind === 'chest' ? this.evolvable().slice(0, 3) : [];
+    const opts = evo.length > 0 ? evo.map((id) => this.evolveOption(id)) : this.rollOptions();
+    ui.showLevelUp(evo.length > 0 ? 'evolve' : kind, opts, (opt) => {
       this.applyOption(opt);
       this.state = 'playing';
       this.input.keyboard?.resetKeys();
       this.scene.resume();
+      this.announceEvolutions();
     });
+  }
+
+  /** Max-level weapons whose paired passive is owned. */
+  evolvable(): WeaponId[] {
+    return this.weapons
+      .filter((w) => !w.evolved && w.level >= ITEMS[w.id].maxLevel && (this.itemLevels.get(EVOLUTIONS[w.id].passive) ?? 0) > 0)
+      .map((w) => w.id);
+  }
+
+  private evolveOption(id: WeaponId): UpgradeOption {
+    const evo = EVOLUTIONS[id];
+    return {
+      id: 'evolve', evolve: id, name: evo.name, icon: evo.icon, color: evo.color, isNew: true,
+      levelText: '进化！', desc: evo.desc, hint: `${ITEMS[id].name} + ${ITEMS[evo.passive].name}`,
+    };
+  }
+
+  private evolveWeapon(id: WeaponId) {
+    const w = this.weapons.find((x) => x.id === id);
+    if (!w || w.evolved) return;
+    w.evolve();
+    const evo = EVOLUTIONS[id];
+    this.addRing(this.px, this.py, 380, evo.color, 0.9);
+    this.burst(this.px, this.py, evo.color, 50);
+    this.cameras.main.shake(350, 0.01);
+    this.ui()?.banner(`进化！${evo.name}`, true, evo.color);
+    sfx.play('victory');
+  }
+
+  /** Tell the player once when a weapon becomes ready to evolve. */
+  private announceEvolutions() {
+    for (const id of this.evolvable()) {
+      if (this.evoAnnounced.has(id)) continue;
+      this.evoAnnounced.add(id);
+      this.ui()?.banner(`「${ITEMS[id].name}」可以进化了！打开宝箱即可进化`, false);
+    }
+  }
+
+  heal(amount: number) {
+    const before = this.hp;
+    this.hp = Math.min(this.stats.maxHp, this.hp + amount);
+    const gained = this.hp - before;
+    if (gained >= 1) this.number(this.px, this.py - 24, gained, '#6bff8f');
   }
 
   rollOptions(n = 3): UpgradeOption[] {
@@ -782,8 +835,11 @@ export class GameScene extends Phaser.Scene {
     }
     for (const id of PASSIVE_IDS) {
       const lvl = this.itemLevels.get(id) ?? 0;
+      // passives that unlock an evolution for a weapon we own show up a bit more often
+      const pairs = EVOLVES_WEAPON[id];
+      const bias = lvl === 0 && pairs && this.itemLevels.has(pairs) ? 1.6 : 1;
       if (lvl > 0 && lvl < ITEMS[id].maxLevel) pool.push({ id, w: 2 });
-      else if (lvl === 0 && passivesOwned < MAX_PASSIVES) pool.push({ id, w: 1.4 });
+      else if (lvl === 0 && passivesOwned < MAX_PASSIVES) pool.push({ id, w: 1.4 * bias });
     }
 
     const out: UpgradeOption[] = [];
@@ -798,6 +854,9 @@ export class GameScene extends Phaser.Scene {
       const { id } = pool.splice(idx, 1)[0];
       const def = ITEMS[id];
       const lvl = this.itemLevels.get(id) ?? 0;
+      let hint: string | undefined;
+      if (def.kind === 'weapon') hint = `进化：满级 + ${ITEMS[EVOLUTIONS[id as WeaponId].passive].name}`;
+      else if (EVOLVES_WEAPON[id as PassiveId]) hint = `可使「${ITEMS[EVOLVES_WEAPON[id as PassiveId]!].name}」进化`;
       out.push({
         id,
         name: def.name,
@@ -806,6 +865,7 @@ export class GameScene extends Phaser.Scene {
         isNew: lvl === 0,
         levelText: lvl === 0 ? '新！' : `Lv ${lvl} → ${lvl + 1}${lvl + 1 === def.maxLevel ? ' (满)' : ''}`,
         desc: def.desc[lvl],
+        hint,
       });
     }
     if (out.length === 0) {
@@ -824,6 +884,10 @@ export class GameScene extends Phaser.Scene {
     }
     if (opt.id === 'gold') {
       this.coins += 25;
+      return;
+    }
+    if (opt.id === 'evolve') {
+      this.evolveWeapon(opt.evolve!);
       return;
     }
     const lvl = this.itemLevels.get(opt.id) ?? 0;
@@ -902,7 +966,7 @@ export class GameScene extends Phaser.Scene {
     writeSave();
 
     const damage = [...this.damageBy.entries()]
-      .map(([id, value]) => ({ id, value }))
+      .map(([id, value]) => ({ id, value, evolved: !!this.weapons.find((w) => w.id === id)?.evolved }))
       .sort((a, b) => b.value - a.value);
     this.scene.pause();
     this.ui()?.showResult({

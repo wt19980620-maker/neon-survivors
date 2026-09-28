@@ -127,6 +127,52 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   },
 };
 
+// ---------------------------------------------------------------- evolutions
+
+/** A max-level weapon + its paired passive evolves when the next chest is opened. */
+export interface EvolutionDef {
+  weapon: WeaponId;
+  passive: PassiveId;
+  name: string;
+  icon: string;
+  color: number;
+  desc: string;
+  stats: WeaponStats;
+}
+
+export const EVOLUTIONS: Record<WeaponId, EvolutionDef> = {
+  bolt: {
+    weapon: 'bolt', passive: 'haste', name: '风暴弹幕', icon: 'icon_evo_bolt', color: 0xff7ad9,
+    desc: '飞弹自动追踪敌人，高速连射',
+    stats: { damage: 24, cooldown: 0.45, count: 4, pierce: 3, area: 1.2, speed: 620, extra: 0, knockback: 80 },
+  },
+  orbit: {
+    weapon: 'orbit', passive: 'area', name: '星环绞杀', icon: 'icon_evo_orbit', color: 0xffd24d,
+    desc: '八片利刃绕身胀缩，绞碎一切',
+    stats: { damage: 22, cooldown: 0.3, count: 8, pierce: 0, area: 1.2, speed: 4.6, extra: 95, knockback: 190 },
+  },
+  nova: {
+    weapon: 'nova', passive: 'vitality', name: '生命脉冲', icon: 'icon_evo_nova', color: 0x7dffb0,
+    desc: '巨型冲击波，每命中敌人都会为你回复生命',
+    stats: { damage: 55, cooldown: 2.0, count: 2, pierce: 0, area: 1, speed: 0, extra: 215, knockback: 400 },
+  },
+  chain: {
+    weapon: 'chain', passive: 'might', name: '雷霆审判', icon: 'icon_evo_chain', color: 0xfff8c4,
+    desc: '闪电跳跃九次，终点引发雷暴爆炸',
+    stats: { damage: 30, cooldown: 0.9, count: 3, pierce: 9, area: 1, speed: 0, extra: 190, knockback: 60 },
+  },
+  disc: {
+    weapon: 'disc', passive: 'amount', name: '裂变星盘', icon: 'icon_evo_disc', color: 0xff9a3d,
+    desc: '飞盘在最远处裂变成三个小飞盘',
+    stats: { damage: 30, cooldown: 1.5, count: 3, pierce: 999, area: 1.4, speed: 480, extra: 320, knockback: 130 },
+  },
+};
+
+/** passive id -> weapon it evolves */
+export const EVOLVES_WEAPON: Partial<Record<PassiveId, WeaponId>> = Object.fromEntries(
+  Object.values(EVOLUTIONS).map((e) => [e.passive, e.weapon]),
+);
+
 export const WEAPON_IDS: WeaponId[] = ['bolt', 'orbit', 'nova', 'chain', 'disc'];
 export const PASSIVE_IDS: PassiveId[] = ['might', 'haste', 'area', 'amount', 'speed', 'magnet', 'armor', 'vitality', 'growth'];
 

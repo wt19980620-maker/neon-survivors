@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WEAPON_LEVELS, type WeaponId, type WeaponStats } from './data';
+import { EVOLUTIONS, WEAPON_LEVELS, type WeaponId, type WeaponStats } from './data';
 import { COLORS } from './palette';
 import { sfx } from './audio';
 import { Pool, type Enemy, type Pooled } from './entities';
@@ -10,13 +10,22 @@ const TAU = Math.PI * 2;
 
 export abstract class Weapon {
   level = 1;
+  evolved = false;
   protected timer = 0.3;
 
   constructor(readonly id: WeaponId, protected readonly g: GameScene) {}
 
   get s(): WeaponStats {
-    return WEAPON_LEVELS[this.id][this.level - 1];
+    return this.evolved ? EVOLUTIONS[this.id].stats : WEAPON_LEVELS[this.id][this.level - 1];
   }
+
+  evolve() {
+    this.evolved = true;
+    this.timer = 0;
+    this.onEvolve();
+  }
+
+  protected onEvolve() {}
 
   protected cooldown() {
     return this.s.cooldown * this.g.stats.haste;
@@ -35,7 +44,7 @@ export abstract class Weapon {
   destroy() {}
 }
 
-// ------------------------------------------------------------------ 能量飞弹
+// ------------------------------------------------------------------ 能量飞弹 / 风暴弹幕
 
 interface Bolt extends Pooled {
   x: number;
@@ -47,6 +56,9 @@ interface Bolt extends Pooled {
   pierce: number;
   knock: number;
   hit: Set<Enemy>;
+  homing: boolean;
+  target: Enemy | null;
+  retarget: number;
 }
 
 class BoltWeapon extends Weapon {
@@ -60,7 +72,7 @@ class BoltWeapon extends Weapon {
       alive: false,
       sprite: g.add.image(0, 0, 'bolt').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD),
       x: 0, y: 0, vx: 0, vy: 0, life: 0, damage: 0, pierce: 0, knock: 0,
-      hit: new Set<Enemy>(),
+      hit: new Set<Enemy>(), homing: false, target: null, retarget: 0,
     }));
   }
 
@@ -73,7 +85,8 @@ class BoltWeapon extends Weapon {
       if (targets.length === 0) {
         this.timer = 0.1;
       } else {
-        for (let i = 0; i < n; i++) this.queue.push({ delay: i * 0.07, target: targets[i % targets.length] });
+        const gap = this.evolved ? 0.04 : 0.07;
+        for (let i = 0; i < n; i++) this.queue.push({ delay: i * gap, target: targets[i % targets.length] });
         this.timer = this.cooldown();
       }
     }
@@ -89,7 +102,9 @@ class BoltWeapon extends Weapon {
     }
 
     const r = 7 * this.area();
+    const turn = 9 * dt;
     for (const b of this.pool.active) {
+      if (b.homing) this.steer(b, turn, dt);
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
@@ -106,7 +121,7 @@ class BoltWeapon extends Weapon {
         g.damageEnemy(e, b.damage, 'bolt', b.vx / len, b.vy / len, b.knock);
         if (--b.pierce <= 0) {
           b.alive = false;
-          g.burst(b.x, b.y, COLORS.bolt, 4);
+          g.burst(b.x, b.y, this.evolved ? EVOLUTIONS.bolt.color : COLORS.bolt, 4);
           break;
         }
       }
@@ -114,21 +129,52 @@ class BoltWeapon extends Weapon {
     this.pool.compact();
   }
 
+  /** Homing: re-pick the closest unhit enemy now and then and turn towards it. */
+  private steer(b: Bolt, turn: number, dt: number) {
+    b.retarget -= dt;
+    if (!b.target || !b.target.alive || b.hit.has(b.target) || b.retarget <= 0) {
+      b.retarget = 0.15;
+      b.target = null;
+      let best = 320 * 320;
+      this.tmp.length = 0;
+      for (const e of this.g.queryEnemies(b.x, b.y, 320, this.tmp)) {
+        if (b.hit.has(e)) continue;
+        const d = (e.x - b.x) ** 2 + (e.y - b.y) ** 2;
+        if (d < best) {
+          best = d;
+          b.target = e;
+        }
+      }
+    }
+    if (!b.target) return;
+    const cur = Math.atan2(b.vy, b.vx);
+    const want = Math.atan2(b.target.y - b.y, b.target.x - b.x);
+    const a = cur + Phaser.Math.Clamp(Phaser.Math.Angle.Wrap(want - cur), -turn, turn);
+    const sp = Math.hypot(b.vx, b.vy);
+    b.vx = Math.cos(a) * sp;
+    b.vy = Math.sin(a) * sp;
+    b.sprite.setRotation(a);
+  }
+
   private fire(t: Enemy) {
     const g = this.g;
     const s = this.s;
-    const ang = Math.atan2(t.y - g.py, t.x - g.px) + (Math.random() - 0.5) * 0.12;
+    const spread = this.evolved ? 0.5 : 0.12;
+    const ang = Math.atan2(t.y - g.py, t.x - g.px) + (Math.random() - 0.5) * spread;
     const b = this.pool.get();
     b.x = g.px;
     b.y = g.py;
     b.vx = Math.cos(ang) * s.speed;
     b.vy = Math.sin(ang) * s.speed;
-    b.life = 1.4;
+    b.life = this.evolved ? 1.8 : 1.4;
     b.damage = this.damage();
     b.pierce = s.pierce;
     b.knock = s.knockback;
     b.hit.clear();
-    b.sprite.setPosition(b.x, b.y).setRotation(ang).setScale(this.area());
+    b.homing = this.evolved;
+    b.target = t;
+    b.retarget = 0.15;
+    b.sprite.setTexture(this.evolved ? 'bolt_evo' : 'bolt').setPosition(b.x, b.y).setRotation(ang).setScale(this.area());
     sfx.play('shoot');
   }
 
@@ -137,7 +183,7 @@ class BoltWeapon extends Weapon {
   }
 }
 
-// ------------------------------------------------------------------ 环绕刃
+// ------------------------------------------------------------------ 环绕刃 / 星环绞杀
 
 class OrbitWeapon extends Weapon {
   private blades: Phaser.GameObjects.Image[] = [];
@@ -150,18 +196,27 @@ class OrbitWeapon extends Weapon {
     this.src = g.newSourceId();
   }
 
+  protected onEvolve() {
+    // rebuilt next frame with the evolved texture
+    for (const b of this.blades) b.destroy();
+    this.blades = [];
+  }
+
   update(dt: number) {
     const g = this.g;
     const s = this.s;
     const n = s.count + g.stats.amount;
+    const tex = this.evolved ? 'blade_evo' : 'blade';
     while (this.blades.length < n) {
-      this.blades.push(g.add.image(g.px, g.py, 'blade').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD));
+      this.blades.push(g.add.image(g.px, g.py, tex).setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD));
     }
     while (this.blades.length > n) this.blades.pop()!.destroy();
 
     const area = this.area();
     this.angle = (this.angle + s.speed * dt) % TAU;
-    const radius = s.extra * area;
+    // evolved ring "breathes" in and out, sweeping a wide band
+    const breathe = this.evolved ? 1 + 0.5 * Math.sin(g.elapsed * 2.4) : 1;
+    const radius = s.extra * area * breathe;
     const hitR = 14 * area;
     const dmg = this.damage();
     for (let i = 0; i < n; i++) {
@@ -187,7 +242,7 @@ class OrbitWeapon extends Weapon {
   }
 }
 
-// ------------------------------------------------------------------ 脉冲新星
+// ------------------------------------------------------------------ 脉冲新星 / 生命脉冲
 
 class NovaWeapon extends Weapon {
   private pending: number[] = [];
@@ -223,18 +278,20 @@ class NovaWeapon extends Weapon {
     const g = this.g;
     const dmg = this.damage();
     this.tmp.length = 0;
-    for (const e of g.queryEnemies(g.px, g.py, radius, this.tmp)) {
+    const hits = g.queryEnemies(g.px, g.py, radius, this.tmp);
+    for (const e of hits) {
       const dx = e.x - g.px;
       const dy = e.y - g.py;
       const len = Math.hypot(dx, dy) || 1;
       g.damageEnemy(e, dmg, 'nova', dx / len, dy / len, this.s.knockback);
     }
-    g.addRing(g.px, g.py, radius, COLORS.nova, 0.35);
+    if (this.evolved && hits.length > 0) g.heal(Math.min(8, 1 + hits.length * 0.25));
+    g.addRing(g.px, g.py, radius, this.evolved ? EVOLUTIONS.nova.color : COLORS.nova, 0.35);
     sfx.play('nova');
   }
 }
 
-// ------------------------------------------------------------------ 连锁闪电
+// ------------------------------------------------------------------ 连锁闪电 / 雷霆审判
 
 class ChainWeapon extends Weapon {
   private tmp: Enemy[] = [];
@@ -274,9 +331,11 @@ class ChainWeapon extends Weapon {
     this.hitSet.clear();
     const pts: number[] = [g.px, g.py - 6];
     let cur: Enemy | undefined = first;
+    let last: Enemy = first;
     for (let j = 0; j <= s.pierce && cur; j++) {
       this.hitSet.add(cur);
       pts.push(cur.x, cur.y);
+      last = cur;
       g.damageEnemy(cur, dmg, 'chain', 0, 0, s.knockback);
       const from: Enemy = cur;
       cur = undefined;
@@ -291,11 +350,28 @@ class ChainWeapon extends Weapon {
         }
       }
     }
-    g.addLightning(pts, COLORS.chain);
+    const color = this.evolved ? EVOLUTIONS.chain.color : COLORS.chain;
+    g.addLightning(pts, color);
+    if (this.evolved) this.thunderclap(last.x, last.y, dmg * 0.6, color);
+  }
+
+  /** Evolved chains end in an explosion at the last target. */
+  private thunderclap(x: number, y: number, dmg: number, color: number) {
+    const g = this.g;
+    const r = 85 * this.area();
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(x, y, r, this.tmp)) {
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const len = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, dmg, 'chain', dx / len, dy / len, 160);
+    }
+    g.addRing(x, y, r, color, 0.3);
+    g.burst(x, y, color, 10);
   }
 }
 
-// ------------------------------------------------------------------ 回旋飞盘
+// ------------------------------------------------------------------ 回旋飞盘 / 裂变星盘
 
 interface Disc extends Pooled {
   x: number;
@@ -307,6 +383,8 @@ interface Disc extends Pooled {
   returning: boolean;
   src: number;
   life: number;
+  /** split fragment from an evolved disc: flies outward once, never returns */
+  mini: boolean;
 }
 
 class DiscWeapon extends Weapon {
@@ -318,8 +396,23 @@ class DiscWeapon extends Weapon {
     this.pool = new Pool<Disc>(() => ({
       alive: false,
       sprite: g.add.image(0, 0, 'disc').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD),
-      x: 0, y: 0, dx: 0, dy: 0, traveled: 0, range: 0, returning: false, src: 0, life: 0,
+      x: 0, y: 0, dx: 0, dy: 0, traveled: 0, range: 0, returning: false, src: 0, life: 0, mini: false,
     }));
+  }
+
+  private spawn(x: number, y: number, a: number, range: number, mini: boolean) {
+    const d = this.pool.get();
+    d.x = x;
+    d.y = y;
+    d.dx = Math.cos(a);
+    d.dy = Math.sin(a);
+    d.traveled = 0;
+    d.range = range;
+    d.returning = false;
+    d.src = this.g.newSourceId();
+    d.life = 6;
+    d.mini = mini;
+    d.sprite.setTexture(this.evolved ? 'disc_evo' : 'disc').setPosition(x, y);
   }
 
   update(dt: number) {
@@ -331,36 +424,33 @@ class DiscWeapon extends Weapon {
       const t = g.nearestEnemies(g.px, g.py, 600, 1)[0];
       const base = t ? Math.atan2(t.y - g.py, t.x - g.px) : Math.atan2(g.faceY, g.faceX);
       const n = s.count + g.stats.amount;
-      for (let i = 0; i < n; i++) {
-        const a = base + (i / n) * TAU;
-        const d = this.pool.get();
-        d.x = g.px;
-        d.y = g.py;
-        d.dx = Math.cos(a);
-        d.dy = Math.sin(a);
-        d.traveled = 0;
-        d.range = s.extra * this.area();
-        d.returning = false;
-        d.src = g.newSourceId();
-        d.life = 6;
-        d.sprite.setPosition(d.x, d.y);
-      }
+      for (let i = 0; i < n; i++) this.spawn(g.px, g.py, base + (i / n) * TAU, s.extra * this.area(), false);
       sfx.play('disc');
     }
 
     const area = this.area();
-    const hitR = 15 * area;
     const dmg = this.damage();
     for (const d of this.pool.active) {
       d.life -= dt;
       if (!d.returning) {
         // ease out towards the far end of the throw
         const k = 1 - d.traveled / d.range;
-        const v = s.speed * (0.35 + 0.65 * k);
+        const v = s.speed * (d.mini ? 0.9 : 0.35 + 0.65 * k);
         d.x += d.dx * v * dt;
         d.y += d.dy * v * dt;
         d.traveled += v * dt;
-        if (d.traveled >= d.range * 0.98) d.returning = true;
+        if (d.traveled >= d.range * 0.98) {
+          if (d.mini) {
+            d.alive = false;
+            g.burst(d.x, d.y, EVOLUTIONS.disc.color, 3);
+            continue;
+          }
+          d.returning = true;
+          if (this.evolved) {
+            const a = Math.atan2(d.dy, d.dx);
+            for (const off of [-0.8, 0, 0.8]) this.spawn(d.x, d.y, a + off, 200 * area, true);
+          }
+        }
       } else {
         const dx = g.px - d.x;
         const dy = g.py - d.y;
@@ -375,12 +465,13 @@ class DiscWeapon extends Weapon {
         d.dx = dx / len;
         d.dy = dy / len;
       }
-      d.sprite.setPosition(d.x, d.y).setScale(area).setRotation(d.sprite.rotation + 14 * dt);
+      const scale = d.mini ? area * 0.6 : area;
+      d.sprite.setPosition(d.x, d.y).setScale(scale).setRotation(d.sprite.rotation + 14 * dt);
       this.tmp.length = 0;
-      for (const e of g.queryEnemies(d.x, d.y, hitR, this.tmp)) {
+      for (const e of g.queryEnemies(d.x, d.y, 15 * scale, this.tmp)) {
         if ((e.hitUntil.get(d.src) ?? 0) > g.elapsed) continue;
         e.hitUntil.set(d.src, g.elapsed + 0.35);
-        g.damageEnemy(e, dmg, 'disc', d.dx, d.dy, s.knockback);
+        g.damageEnemy(e, d.mini ? dmg * 0.6 : dmg, 'disc', d.dx, d.dy, s.knockback);
       }
     }
     this.pool.compact();

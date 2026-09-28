@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, FONT, hex } from './palette';
+import { EVOLUTIONS } from './data';
 
 type Draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -67,11 +68,11 @@ function radial(ctx: CanvasRenderingContext2D, w: number, h: number, inner = 'rg
 
 // Shape painters shared by world sprites and UI icons.
 const shapes = {
-  bolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-    neon(ctx, COLORS.bolt, () => ctx.ellipse(cx, cy, 11 * s, 4.5 * s, 0, 0, Math.PI * 2), { fill: 0.8, blur: 12 });
+  bolt(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.bolt) {
+    neon(ctx, color, () => ctx.ellipse(cx, cy, 11 * s, 4.5 * s, 0, 0, Math.PI * 2), { fill: 0.8, blur: 12 });
   },
-  blade(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-    neon(ctx, COLORS.orbit, () => {
+  blade(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.orbit) {
+    neon(ctx, color, () => {
       ctx.moveTo(cx, cy - 14 * s);
       ctx.lineTo(cx + 6 * s, cy);
       ctx.lineTo(cx, cy + 14 * s);
@@ -79,9 +80,9 @@ const shapes = {
       ctx.closePath();
     }, { fill: 0.55, blur: 12 });
   },
-  disc(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-    neon(ctx, COLORS.disc, () => ctx.arc(cx, cy, 13 * s, 0, Math.PI * 2), { fill: 0.2, line: 3, blur: 12 });
-    neon(ctx, COLORS.disc, () => {
+  disc(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.disc) {
+    neon(ctx, color, () => ctx.arc(cx, cy, 13 * s, 0, Math.PI * 2), { fill: 0.2, line: 3, blur: 12 });
+    neon(ctx, color, () => {
       for (let i = 0; i < 3; i++) {
         const a = (i / 3) * Math.PI * 2;
         ctx.moveTo(cx, cy);
@@ -89,13 +90,13 @@ const shapes = {
       }
     }, { fill: 0, line: 2.5, blur: 6 });
   },
-  nova(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-    neon(ctx, COLORS.nova, () => ctx.arc(cx, cy, 14 * s, 0, Math.PI * 2), { fill: 0.05, line: 2.5 });
-    neon(ctx, COLORS.nova, () => ctx.arc(cx, cy, 8 * s, 0, Math.PI * 2), { fill: 0.1, line: 2 });
-    neon(ctx, COLORS.nova, () => ctx.arc(cx, cy, 3 * s, 0, Math.PI * 2), { fill: 1, line: 1 });
+  nova(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.nova) {
+    neon(ctx, color, () => ctx.arc(cx, cy, 14 * s, 0, Math.PI * 2), { fill: 0.05, line: 2.5 });
+    neon(ctx, color, () => ctx.arc(cx, cy, 8 * s, 0, Math.PI * 2), { fill: 0.1, line: 2 });
+    neon(ctx, color, () => ctx.arc(cx, cy, 3 * s, 0, Math.PI * 2), { fill: 1, line: 1 });
   },
-  chain(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-    neon(ctx, COLORS.chain, () => {
+  chain(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.chain) {
+    neon(ctx, color, () => {
       ctx.moveTo(cx + 3 * s, cy - 15 * s);
       ctx.lineTo(cx - 7 * s, cy + 1 * s);
       ctx.lineTo(cx + 1 * s, cy + 1 * s);
@@ -305,4 +306,47 @@ export function generateTextures(scene: Phaser.Scene) {
   glyphIcon(scene, 'icon_coin', 0xffd24d, '金');
   glyphIcon(scene, 'icon_revive', 0xffffff, '魂');
   glyphIcon(scene, 'icon_heal', COLORS.heart, '愈');
+
+  // --- evolved weapons: recoloured world sprites + gold-framed icons with a star badge
+  const E = EVOLUTIONS;
+  make(scene, 'bolt_evo', 40, 22, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1.1, E.bolt.color));
+  make(scene, 'blade_evo', 40, 44, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1.1, E.orbit.color));
+  make(scene, 'disc_evo', 44, 44, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1.1, E.disc.color));
+  const evoIcon = (key: string, paint: (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void) =>
+    make(scene, key, 48, 48, (ctx, w, h) => {
+      iconFrame(ctx, w, h, COLORS.elite);
+      paint(ctx, w / 2, h / 2);
+      ctx.save();
+      ctx.fillStyle = hex(COLORS.elite);
+      ctx.shadowColor = hex(COLORS.elite);
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      star(ctx, w - 11, 11, 7, 3, 5, -Math.PI / 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  evoIcon('icon_evo_bolt', (ctx, cx, cy) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    shapes.bolt(ctx, -3, -5, 0.8, E.bolt.color);
+    shapes.bolt(ctx, 3, 5, 0.8, E.bolt.color);
+    ctx.restore();
+  });
+  evoIcon('icon_evo_orbit', (ctx, cx, cy) => {
+    for (let i = 0; i < 4; i++) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((i * Math.PI) / 2);
+      shapes.blade(ctx, 0, -9, 0.55, E.orbit.color);
+      ctx.restore();
+    }
+  });
+  evoIcon('icon_evo_nova', (ctx, cx, cy) => shapes.nova(ctx, cx, cy, 1.15, E.nova.color));
+  evoIcon('icon_evo_chain', (ctx, cx, cy) => shapes.chain(ctx, cx, cy, 1.15, E.chain.color));
+  evoIcon('icon_evo_disc', (ctx, cx, cy) => {
+    shapes.disc(ctx, cx - 5, cy + 4, 0.65, E.disc.color);
+    shapes.disc(ctx, cx + 7, cy - 6, 0.5, E.disc.color);
+    shapes.disc(ctx, cx + 8, cy + 9, 0.4, E.disc.color);
+  });
 }
