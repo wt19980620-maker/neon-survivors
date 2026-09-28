@@ -17,6 +17,7 @@ import {
 import { createWeapon, type Weapon } from '../game/weapons';
 import { Director } from '../game/director';
 import { inputState } from '../game/input';
+import { vibrate } from '../ui/screen';
 import type { UIScene } from './UIScene';
 
 const TAU = Math.PI * 2;
@@ -185,10 +186,16 @@ export class GameScene extends Phaser.Scene {
     this.hp = this.stats.maxHp;
     this.addItem(char.weapon);
 
+    // phones: switching apps / locking the screen fires visibilitychange rather than blur
     const onBlur = () => this.requestPause();
+    const onVisibility = () => {
+      if (document.hidden) this.requestPause();
+    };
     window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
     this.events.once('shutdown', () => {
       window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
       this.scale.off('resize', this.applyZoom, this);
       for (const w of this.weapons) w.destroy();
       this.emitters.clear();
@@ -323,6 +330,7 @@ export class GameScene extends Phaser.Scene {
     if (this.firstHurt < 0) this.firstHurt = this.elapsed;
     this.cameras.main.shake(120, 0.006);
     this.ui()?.flashDamage();
+    vibrate(dmg >= 15 ? 60 : 30);
     this.number(this.px, this.py - 20, dmg, '#ff5c7a');
     sfx.play('hurt');
     if (this.hp <= 0) this.die();

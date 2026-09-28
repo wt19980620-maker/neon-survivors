@@ -17,6 +17,8 @@ const unlock = () => {
 };
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
+// long-press on phones would otherwise pop the browser's context menu mid-game
+window.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function boot() {
   const game = new Phaser.Game({

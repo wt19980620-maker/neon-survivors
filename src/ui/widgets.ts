@@ -35,6 +35,8 @@ export function makeButton(
   onClick: () => void,
   color: number = COLORS.player,
   size = 20,
+  /** 'up' is needed for actions browsers only allow on a completed tap, e.g. fullscreen */
+  trigger: 'down' | 'up' = 'down',
 ): Button {
   const c = scene.add.container(x, y) as Button;
   const bg = scene.add.rectangle(0, 0, w, h, COLORS.panel, 0.92).setStrokeStyle(2, color, 0.9);
@@ -54,10 +56,17 @@ export function makeButton(
   });
   bg.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
     ev.stopPropagation();
-    if (!enabled) return;
+    if (!enabled || trigger !== 'down') return;
     sfx.play('select');
     onClick();
   });
+  if (trigger === 'up') {
+    bg.on('pointerup', () => {
+      if (!enabled) return;
+      sfx.play('select');
+      onClick();
+    });
+  }
   c.setLabel = (t: string) => {
     txt.setText(t);
     return c;
