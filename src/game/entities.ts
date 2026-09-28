@@ -63,6 +63,16 @@ export class Enemy implements Pooled {
   baseScale = 1;
   /** current movement direction (radians), used by enemies with a limited turn rate */
   heading = 0;
+  /** movement slow, 0..1 (1 = frozen), active while slowUntil > game time */
+  slow = 0;
+  slowUntil = 0;
+  freezeUntil = 0;
+  /** whether the icy tint is currently applied */
+  iced = false;
+  /** ranged attack cooldown */
+  aiT = 0;
+  /** bomber fuse: seconds until it blows, -1 when not lit */
+  fuse = -1;
   /** weapon source id -> game time until this enemy can be hit by that source again */
   hitUntil = new Map<number, number>();
   // boss AI

@@ -95,6 +95,45 @@ const shapes = {
     neon(ctx, color, () => ctx.arc(cx, cy, 8 * s, 0, Math.PI * 2), { fill: 0.1, line: 2 });
     neon(ctx, color, () => ctx.arc(cx, cy, 3 * s, 0, Math.PI * 2), { fill: 1, line: 1 });
   },
+  laser(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.laser) {
+    neon(ctx, color, () => {
+      ctx.moveTo(cx - 15 * s, cy + 15 * s);
+      ctx.lineTo(cx + 15 * s, cy - 15 * s);
+    }, { fill: 0, line: 5 * s, blur: 12 });
+    neon(ctx, 0xffffff, () => {
+      ctx.moveTo(cx - 13 * s, cy + 13 * s);
+      ctx.lineTo(cx + 13 * s, cy - 13 * s);
+    }, { fill: 0, line: 1.5 * s, blur: 4 });
+  },
+  frost(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.frost) {
+    // six-armed snowflake
+    neon(ctx, color, () => {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const x = cx + Math.cos(a) * 14 * s;
+        const y = cy + Math.sin(a) * 14 * s;
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x, y);
+        const bx = cx + Math.cos(a) * 8 * s;
+        const by = cy + Math.sin(a) * 8 * s;
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(a + 0.8) * 4 * s, by + Math.sin(a + 0.8) * 4 * s);
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(a - 0.8) * 4 * s, by + Math.sin(a - 0.8) * 4 * s);
+      }
+    }, { fill: 0, line: 2 * s, blur: 8 });
+  },
+  mine(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.mine) {
+    neon(ctx, color, () => ctx.arc(cx, cy, 10 * s, 0, Math.PI * 2), { fill: 0.25, line: 2.5 });
+    neon(ctx, color, () => {
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        ctx.moveTo(cx + Math.cos(a) * 10 * s, cy + Math.sin(a) * 10 * s);
+        ctx.lineTo(cx + Math.cos(a) * 15 * s, cy + Math.sin(a) * 15 * s);
+      }
+    }, { fill: 0, line: 2.5 });
+    neon(ctx, 0xffffff, () => ctx.arc(cx, cy, 3 * s, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
+  },
   chain(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.chain) {
     neon(ctx, color, () => {
       ctx.moveTo(cx + 3 * s, cy - 15 * s);
@@ -198,6 +237,32 @@ export function generateTextures(scene: Phaser.Scene) {
     neon(ctx, COLORS.boss, () => star(ctx, w / 2, h / 2, 48, 30, 8), { fill: 0.22, line: 4, blur: 18 });
     neon(ctx, COLORS.boss, () => poly(ctx, w / 2, h / 2, 20, 8, Math.PI / 8), { fill: 0.35, line: 3 });
     neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 7, 0, Math.PI * 2), { fill: 1, line: 1, blur: 12 });
+  });
+  make(scene, 'e_spitter', 40, 40, (ctx, w, h) => {
+    // round body with a forward-facing "nozzle"
+    neon(ctx, COLORS.spitter, () => ctx.arc(w / 2 - 2, h / 2, 11, 0, Math.PI * 2), { fill: 0.25, line: 2.5 });
+    neon(ctx, COLORS.spitter, () => {
+      ctx.moveTo(w / 2 + 8, h / 2 - 5);
+      ctx.lineTo(w / 2 + 16, h / 2);
+      ctx.lineTo(w / 2 + 8, h / 2 + 5);
+    }, { fill: 0, line: 2.5 });
+    neon(ctx, 0xffffff, () => ctx.arc(w / 2 + 1, h / 2, 3, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
+  });
+  make(scene, 'e_splitter', 48, 48, (ctx, w, h) => {
+    neon(ctx, COLORS.splitter, () => poly(ctx, w / 2, h / 2, 17, 4, Math.PI / 4), { fill: 0.2, line: 3 });
+    neon(ctx, COLORS.splitter, () => {
+      ctx.moveTo(w / 2 - 9, h / 2);
+      ctx.lineTo(w / 2 + 9, h / 2);
+      ctx.moveTo(w / 2, h / 2 - 9);
+      ctx.lineTo(w / 2, h / 2 + 9);
+    }, { fill: 0, line: 2 });
+  });
+  make(scene, 'e_splitling', 26, 26, (ctx, w, h) => {
+    neon(ctx, COLORS.splitter, () => poly(ctx, w / 2, h / 2, 8, 4, Math.PI / 4), { fill: 0.45, line: 2 });
+  });
+  make(scene, 'e_bomber', 36, 36, (ctx, w, h) => {
+    neon(ctx, COLORS.bomber, () => star(ctx, w / 2, h / 2, 13, 7, 8), { fill: 0.35, line: 2 });
+    neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 3.5, 0, Math.PI * 2), { fill: 1, line: 1, blur: 8 });
   });
   make(scene, 'ebullet', 20, 20, (ctx, w, h) => {
     neon(ctx, COLORS.enemyBullet, () => ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2), { fill: 0.9, line: 2, blur: 8 });
@@ -306,6 +371,11 @@ export function generateTextures(scene: Phaser.Scene) {
   weaponIcon('icon_nova', COLORS.nova, (ctx, cx, cy, s) => shapes.nova(ctx, cx, cy, s));
   weaponIcon('icon_chain', COLORS.chain, (ctx, cx, cy, s) => shapes.chain(ctx, cx, cy, s));
   weaponIcon('icon_disc', COLORS.disc, (ctx, cx, cy, s) => shapes.disc(ctx, cx, cy, s));
+  weaponIcon('icon_laser', COLORS.laser, (ctx, cx, cy, s) => shapes.laser(ctx, cx, cy, s));
+  weaponIcon('icon_frost', COLORS.frost, (ctx, cx, cy, s) => shapes.frost(ctx, cx, cy, s));
+  weaponIcon('icon_mine', COLORS.mine, (ctx, cx, cy, s) => shapes.mine(ctx, cx, cy, s));
+  make(scene, 'mine', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8));
+  make(scene, 'mine_evo', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8, EVOLUTIONS.mine.color));
 
   glyphIcon(scene, 'icon_might', 0xff6b6b, '力');
   glyphIcon(scene, 'icon_haste', 0x7cf8ff, '急');
@@ -360,6 +430,19 @@ export function generateTextures(scene: Phaser.Scene) {
   });
   evoIcon('icon_evo_nova', (ctx, cx, cy) => shapes.nova(ctx, cx, cy, 1.15, E.nova.color));
   evoIcon('icon_evo_chain', (ctx, cx, cy) => shapes.chain(ctx, cx, cy, 1.15, E.chain.color));
+  evoIcon('icon_evo_laser', (ctx, cx, cy) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (const a of [-Math.PI / 4, Math.PI / 4]) {
+      ctx.save();
+      ctx.rotate(a);
+      shapes.laser(ctx, 0, 0, 0.9, E.laser.color);
+      ctx.restore();
+    }
+    ctx.restore();
+  });
+  evoIcon('icon_evo_frost', (ctx, cx, cy) => shapes.frost(ctx, cx, cy, 1.15, E.frost.color));
+  evoIcon('icon_evo_mine', (ctx, cx, cy) => shapes.mine(ctx, cx, cy, 1.1, E.mine.color));
   evoIcon('icon_evo_disc', (ctx, cx, cy) => {
     shapes.disc(ctx, cx - 5, cy + 4, 0.65, E.disc.color);
     shapes.disc(ctx, cx + 7, cy - 6, 0.5, E.disc.color);

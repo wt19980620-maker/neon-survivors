@@ -4,12 +4,17 @@ import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
 import { sfx } from './game/audio';
+import { music } from './game/music';
 import { loadSave } from './game/save';
 
 sfx.setMuted(loadSave().muted);
+music.setEnabled(loadSave().music);
 
 // Browsers only allow audio after a user gesture.
-const unlock = () => sfx.unlock();
+const unlock = () => {
+  sfx.unlock();
+  music.start();
+};
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
 
@@ -29,6 +34,7 @@ function boot() {
   });
   // Handy for debugging from the console.
   (window as unknown as { __game: Phaser.Game }).__game = game;
+  if (import.meta.env.DEV) (window as unknown as { __audio: object }).__audio = { sfx, music };
 }
 
 // WebGL framebuffers fail to initialise at 0×0 (e.g. a hidden iframe/tab), so wait for a real size.

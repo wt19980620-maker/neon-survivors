@@ -20,7 +20,9 @@ export class Director {
       { t: 150, done: false, run: () => this.ring('chaser', 32, '被包围了！') },
       { t: 300, done: false, run: () => this.boss(false) },
       { t: 390, done: false, run: () => this.rush('bat', 70, '蜂群来袭！') },
+      { t: 340, done: false, run: () => this.ring('spitter', 14, '远程火力网！') },
       { t: 450, done: false, run: () => this.ring('brute', 22, '重甲方阵！') },
+      { t: 565, done: false, run: () => this.rush('bomber', 26, '自爆虫潮！') },
       { t: 520, done: false, run: () => this.rush('chaser', 80, '潮水涌来！') },
       { t: RUN_LENGTH, done: false, run: () => this.boss(true) },
     ];
@@ -73,20 +75,36 @@ export class Director {
 
   private spawnOne(t: number) {
     const g = this.g;
-    const wChaser = 10;
-    const wBat = t > 45 ? 5 + t / 60 : 0;
-    const wBrute = t > 110 ? 1 + t / 150 : 0;
-    const r = Math.random() * (wChaser + wBat + wBrute);
+    const weights: [EnemyKind | 'bats' | 'bombers', number][] = [
+      ['chaser', 10],
+      ['bats', t > 45 ? 5 + t / 60 : 0],
+      ['brute', t > 110 ? 1 + t / 150 : 0],
+      ['spitter', t > 150 ? 0.8 + t / 300 : 0],
+      ['splitter', t > 200 ? 0.8 + t / 300 : 0],
+      ['bombers', t > 240 ? 0.6 + t / 400 : 0],
+    ];
+    let r = Math.random() * weights.reduce((s, [, w]) => s + w, 0);
+    let kind = weights[0][0];
+    for (const [k, w] of weights) {
+      r -= w;
+      if (r <= 0) {
+        kind = k;
+        break;
+      }
+    }
     const p = g.spawnPoint();
-    if (r < wChaser) {
-      g.spawnEnemy('chaser', p.x, p.y);
-    } else if (r < wChaser + wBat) {
+    if (kind === 'bats') {
       // bats arrive in small flocks
       const n = 4 + Math.floor(Math.random() * 4);
       for (let i = 0; i < n; i++) g.spawnEnemy('bat', p.x + (Math.random() - 0.5) * 70, p.y + (Math.random() - 0.5) * 70);
       this.acc -= n * 0.5;
+    } else if (kind === 'bombers') {
+      // bombers come in pairs so one sneaks through while you dodge the other
+      g.spawnEnemy('bomber', p.x, p.y);
+      g.spawnEnemy('bomber', p.x + 30, p.y + 30);
+      this.acc -= 1;
     } else {
-      g.spawnEnemy('brute', p.x, p.y);
+      g.spawnEnemy(kind, p.x, p.y);
     }
   }
 

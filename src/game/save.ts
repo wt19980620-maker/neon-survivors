@@ -20,6 +20,7 @@ export interface SaveData {
   achievements: string[];
   selectedChar: CharId;
   muted: boolean;
+  music: boolean;
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -33,6 +34,7 @@ function defaults(): SaveData {
     achievements: [],
     selectedChar: 'runner',
     muted: false,
+    music: true,
   };
 }
 

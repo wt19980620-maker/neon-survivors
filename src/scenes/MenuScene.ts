@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS, ITEMS, META_DEFS, charModLines, metaCost, type CharId } from '../game/data';
 import { COLORS } from '../game/palette';
 import { sfx } from '../game/audio';
+import { music } from '../game/music';
 import { loadSave, writeSave } from '../game/save';
 import {
   ACHIEVEMENTS, ACHIEVEMENT_BY_ID, charUnlockedBy, checkAchievements, isCharUnlocked, isDone,
@@ -45,6 +46,9 @@ export class MenuScene extends Phaser.Scene {
       ).setAlpha(0.18 + Math.random() * 0.2).setBlendMode(Phaser.BlendModes.ADD).setScale(0.8 + Math.random() * 0.8);
       this.drifters.push({ img, vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 30, spin: (Math.random() - 0.5) * 1.5 });
     }
+
+    music.setIntensity(0);
+    music.setDuck(1);
 
     // catch achievements earned before they existed (older saves) or while leaving a run
     const fresh = checkAchievements(null);
@@ -96,7 +100,8 @@ export class MenuScene extends Phaser.Scene {
     c.add(makeButton(this, w / 2, by, 240, 54, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 24));
     c.add(makeButton(this, w / 2, by + 66, 240, 44, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 19));
     c.add(makeButton(this, w / 2, by + 120, 240, 44, `成就  ${done}/${ACHIEVEMENTS.length}`, () => this.openOverlay('achievements'), COLORS.elite, 19));
-    c.add(makeButton(this, w / 2, by + 170, 240, 36, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, 15));
+    c.add(makeButton(this, w / 2 - 61, by + 170, 118, 36, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, 15));
+    c.add(makeButton(this, w / 2 + 61, by + 170, 118, 36, save.music ? '音乐：开' : '音乐：关', () => this.toggleMusic(), COLORS.dim, 15));
 
     c.add(glowText(this.add.text(w - 20, 18, `金币 ${save.gold}`, style(20, COLORS.coin, true)).setOrigin(1, 0), COLORS.coin, 8));
     if (this.notice) {
@@ -119,6 +124,17 @@ export class MenuScene extends Phaser.Scene {
     const save = loadSave();
     save.muted = !save.muted;
     sfx.setMuted(save.muted);
+    music.applyVolume();
+    writeSave();
+    this.buildMain();
+  }
+
+  private toggleMusic() {
+    const save = loadSave();
+    save.music = !save.music;
+    sfx.unlock();
+    music.start();
+    music.setEnabled(save.music);
     writeSave();
     this.buildMain();
   }

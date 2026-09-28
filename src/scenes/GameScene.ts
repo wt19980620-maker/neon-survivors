@@ -8,6 +8,7 @@ import {
 } from '../game/achievements';
 import { COLORS, FONT } from '../game/palette';
 import { sfx } from '../game/audio';
+import { music } from '../game/music';
 import { loadSave, metaRank, writeSave } from '../game/save';
 import {
   Enemy, Pool, SpatialGrid,
@@ -99,6 +100,8 @@ export class GameScene extends Phaser.Scene {
   private fxPool!: Pool<FxSprite>;
   private numbers: DamageNumber[] = [];
   private lightning: Lightning[] = [];
+  /** laser beams to draw this frame (weapons re-add them every frame) */
+  private beams: { x: number; y: number; ang: number; len: number; width: number; color: number; alpha: number }[] = [];
   private emitters = new Map<number, Phaser.GameObjects.Particles.ParticleEmitter>();
   private damageBy = new Map<WeaponId, number>();
   private pendingModals: ModalKind[] = [];
@@ -192,6 +195,8 @@ export class GameScene extends Phaser.Scene {
       this.numbers = [];
     });
 
+    music.setIntensity(1);
+    music.setDuck(1);
     this.scene.launch('UI');
   }
 
@@ -255,6 +260,7 @@ export class GameScene extends Phaser.Scene {
     if (this.achTimer <= 0) {
       this.achTimer = 1;
       this.pollAchievements(false);
+      music.setIntensity(this.bossAlive() ? 3 : this.elapsed > 240 ? 2 : 1);
     }
 
     this.grid.clear();
@@ -390,6 +396,12 @@ export class GameScene extends Phaser.Scene {
     e.flash = 0;
     e.hitUntil.clear();
     e.heading = Math.atan2(this.py - y, this.px - x);
+    e.slow = 0;
+    e.slowUntil = 0;
+    e.freezeUntil = 0;
+    e.iced = false;
+    e.fuse = -1;
+    e.aiT = 1 + Math.random() * 1.5;
 
     let hp = def.hp * d.hpMult();
     let damage = def.damage * d.dmgMult();
@@ -428,9 +440,56 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restoreTint(e: Enemy) {
+    const frozen = e.freezeUntil > this.elapsed;
+    const iced = frozen || (e.slowUntil > this.elapsed && e.slow >= 0.3);
+    e.iced = iced;
     if (e.elite) e.sprite.setTint(COLORS.elite);
     else if (e.finalBoss) e.sprite.setTint(0xc79bff);
+    else if (iced) e.sprite.setTint(frozen ? 0xe6fbff : COLORS.frost);
     else e.sprite.clearTint();
+  }
+
+  slowEnemy(e: Enemy, amount: number, dur: number) {
+    if (e.boss) amount = Math.min(amount, 0.35);
+    const active = e.slowUntil > this.elapsed;
+    e.slow = active ? Math.max(e.slow, amount) : amount;
+    e.slowUntil = Math.max(e.slowUntil, this.elapsed + dur);
+  }
+
+  freezeEnemy(e: Enemy, dur: number) {
+    if (e.boss) return this.slowEnemy(e, 0.5, dur);
+    e.freezeUntil = Math.max(e.freezeUntil, this.elapsed + dur);
+  }
+
+  private enemyShot(e: Enemy, nx: number, ny: number) {
+    const b = this.bulletPool.get();
+    b.x = e.x + nx * e.radius;
+    b.y = e.y + ny * e.radius;
+    b.vx = nx * 190;
+    b.vy = ny * 190;
+    b.life = 3.5;
+    b.damage = e.damage;
+    b.sprite.setPosition(b.x, b.y);
+    sfx.play('enemyShot');
+  }
+
+  /** Bomber blast: hurts the player and any enemies caught in it. Not a kill — no drops. */
+  private detonate(e: Enemy) {
+    e.alive = false;
+    const r = 80;
+    this.addRing(e.x, e.y, r, COLORS.bomber, 0.4);
+    this.burst(e.x, e.y, COLORS.bomber, 20);
+    this.cameras.main.shake(120, 0.004);
+    sfx.play('boom');
+    if ((this.px - e.x) ** 2 + (this.py - e.y) ** 2 < (r + PLAYER_R) ** 2) this.hurt(e.damage);
+    const hit: Enemy[] = [];
+    for (const o of this.grid.query(e.x, e.y, r, hit)) {
+      if (o === e) continue;
+      const dx = o.x - e.x;
+      const dy = o.y - e.y;
+      const len = Math.hypot(dx, dy) || 1;
+      this.damageEnemy(o, 30, null, dx / len, dy / len, 250);
+    }
   }
 
   private updateEnemies(dt: number) {
@@ -456,8 +515,12 @@ export class GameScene extends Phaser.Scene {
         e.heading = Math.atan2(dy, dx);
       }
 
+      const frozen = e.freezeUntil > this.elapsed;
+      const slowMul = frozen ? 0 : e.slowUntil > this.elapsed ? 1 - e.slow : 1;
+      const behavior = e.def.behavior;
+
       if (e.boss) {
-        this.updateBoss(e, dt, dx / d, dy / d, d);
+        this.updateBoss(e, dt * slowMul, dx / d, dy / d, d);
       } else {
         // steer towards the player, plus soft separation so crowds spread into a wall
         let sx = 0;
@@ -488,10 +551,47 @@ export class GameScene extends Phaser.Scene {
           mx = Math.cos(e.heading);
           my = Math.sin(e.heading);
         }
-        e.x += (mx * e.speed + e.vx) * dt + sx * Math.min(1, dt * 12);
-        e.y += (my * e.speed + e.vy) * dt + sy * Math.min(1, dt * 12);
-        if (e.def.faceMove) e.sprite.rotation = Math.atan2(my, mx);
-        else e.sprite.rotation += dt * 0.8;
+        let speedMul = slowMul;
+
+        if (behavior === 'ranged') {
+          // keep a firing distance: back off when close, circle at mid range
+          if (d < 230) {
+            mx = -mx;
+            my = -my;
+            speedMul *= 0.8;
+          } else if (d < 300) {
+            const t = mx;
+            mx = -my * 0.6;
+            my = t * 0.6;
+          }
+          if (!frozen) {
+            e.aiT -= dt;
+            if (e.aiT <= 0 && d < 560) {
+              e.aiT = 3 + Math.random() * 0.8;
+              this.enemyShot(e, dx / d, dy / d);
+            }
+          }
+        } else if (behavior === 'bomber') {
+          if (e.fuse >= 0) {
+            speedMul = 0;
+            if (!frozen) e.fuse -= dt;
+            e.sprite.setScale(e.baseScale * (1 + 0.3 * Math.abs(Math.sin(e.fuse * 22))));
+            if (e.fuse <= 0) {
+              this.detonate(e);
+              continue;
+            }
+          } else if (d < 70 && !frozen) {
+            e.fuse = 0.55;
+            e.sprite.setTint(0xffffff);
+            sfx.play('fuse');
+          }
+        }
+
+        e.x += (mx * e.speed * speedMul + e.vx) * dt + sx * Math.min(1, dt * 12);
+        e.y += (my * e.speed * speedMul + e.vy) * dt + sy * Math.min(1, dt * 12);
+        if (behavior === 'ranged') e.sprite.rotation = Math.atan2(dy, dx);
+        else if (e.def.faceMove) e.sprite.rotation = Math.atan2(my, mx);
+        else e.sprite.rotation += dt * 0.8 * slowMul;
       }
       e.vx *= damp;
       e.vy *= damp;
@@ -500,10 +600,14 @@ export class GameScene extends Phaser.Scene {
       if (e.flash > 0) {
         e.flash -= dt;
         if (e.flash <= 0) this.restoreTint(e);
+      } else if (e.fuse < 0) {
+        const iced = frozen || (e.slowUntil > this.elapsed && e.slow >= 0.3);
+        if (iced !== e.iced) this.restoreTint(e);
       }
 
+      // bombers only hurt by exploding; frozen enemies are harmless
       const rr = e.radius + PLAYER_R - 3;
-      if (d < rr) this.hurt(e.damage);
+      if (d < rr && behavior !== 'bomber' && !frozen) this.hurt(e.damage);
     }
   }
 
@@ -645,6 +749,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.dropPickup('gem', e.x, e.y, e.xp);
+    if (e.def.behavior === 'splitter') {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * TAU + Math.random();
+        this.spawnEnemy('splitling', e.x + Math.cos(a) * 14, e.y + Math.sin(a) * 14);
+      }
+    }
     const r = Math.random();
     const brute = e.kind === 'brute';
     if (r < (brute ? 0.03 : 0.004)) this.dropPickup('heart', e.x + 8, e.y, 1);
@@ -966,11 +1076,13 @@ export class GameScene extends Phaser.Scene {
     if (!ui) return;
     this.state = 'paused';
     this.scene.pause();
+    music.setDuck(0.4);
     ui.showPause();
   }
 
   resumeFromPause() {
     if (this.state !== 'paused') return;
+    music.setDuck(1);
     this.state = 'playing';
     this.input.keyboard?.resetKeys();
     this.scene.resume();
@@ -1026,6 +1138,7 @@ export class GameScene extends Phaser.Scene {
 
   private finishRun() {
     this.state = 'over';
+    music.setIntensity(0);
     const settled = this.settleRun() ?? { gold: 0, newBest: false };
     const damage = [...this.damageBy.entries()]
       .map(([id, value]) => ({ id, value, evolved: !!this.weapons.find((w) => w.id === id)?.evolved }))
@@ -1065,6 +1178,10 @@ export class GameScene extends Phaser.Scene {
     f.s1 = s;
     f.a0 = 0.9;
     f.sprite.setPosition(x, y).setTint(color).setScale(f.s0).setAlpha(f.a0);
+  }
+
+  addBeam(x: number, y: number, ang: number, len: number, width: number, color: number, alpha: number) {
+    this.beams.push({ x, y, ang, len, width, color, alpha });
   }
 
   addLightning(pts: number[], color: number) {
@@ -1142,6 +1259,17 @@ export class GameScene extends Phaser.Scene {
       g.lineStyle(2, 0xffffff, a);
       g.strokePoints(this.toPoints(l.pts), false);
     }
+    for (const b of this.beams) {
+      const x1 = b.x + Math.cos(b.ang) * b.len;
+      const y1 = b.y + Math.sin(b.ang) * b.len;
+      g.lineStyle(b.width * 2.4, b.color, 0.22 * b.alpha);
+      g.lineBetween(b.x, b.y, x1, y1);
+      g.lineStyle(b.width * 1.1, b.color, 0.6 * b.alpha);
+      g.lineBetween(b.x, b.y, x1, y1);
+      g.lineStyle(Math.max(1.5, b.width * 0.35), 0xffffff, 0.95 * b.alpha);
+      g.lineBetween(b.x, b.y, x1, y1);
+    }
+    this.beams.length = 0;
     for (const b of this.bosses) {
       if (b.telegraph > 0) {
         const pulse = 0.35 + 0.35 * Math.sin(this.elapsed * 30);

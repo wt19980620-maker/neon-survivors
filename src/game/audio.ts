@@ -4,11 +4,13 @@
  */
 type SfxName =
   | 'shoot' | 'hit' | 'kill' | 'gem' | 'levelup' | 'hurt' | 'nova' | 'zap' | 'disc'
-  | 'pickup' | 'boss' | 'bossShot' | 'chest' | 'select' | 'gameover' | 'victory' | 'warn';
+  | 'pickup' | 'boss' | 'bossShot' | 'chest' | 'select' | 'gameover' | 'victory' | 'warn'
+  | 'laser' | 'boom' | 'freeze' | 'enemyShot' | 'fuse';
 
 const THROTTLE: Record<SfxName, number> = {
   shoot: 70, hit: 45, kill: 35, gem: 28, levelup: 200, hurt: 150, nova: 100, zap: 90, disc: 120,
   pickup: 80, boss: 500, bossShot: 150, chest: 300, select: 50, gameover: 1000, victory: 1000, warn: 400,
+  laser: 120, boom: 70, freeze: 300, enemyShot: 120, fuse: 150,
 };
 
 class Sfx {
@@ -19,6 +21,15 @@ class Sfx {
   private gemCombo = 0;
   private gemComboT = 0;
   muted = false;
+
+  /** Shared with the music sequencer. */
+  get context() {
+    return this.ctx;
+  }
+
+  get noiseBuffer() {
+    return this.noiseBuf;
+  }
 
   unlock() {
     try {
@@ -112,6 +123,11 @@ class Sfx {
       case 'gameover':
         [392, 330, 262, 196].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.14, undefined, i * 0.18));
         break;
+      case 'laser': this.tone(1400 * r, 0.25, 'sawtooth', 0.05, 250); this.noise(0.2, 0.08, 5000, 'highpass'); break;
+      case 'boom': this.noise(0.35, 0.22, 900, 'lowpass', 120); this.tone(110 * r, 0.3, 'sine', 0.2, 40); break;
+      case 'freeze': this.noise(0.5, 0.15, 6000, 'highpass', 2000); this.tone(2400, 0.4, 'sine', 0.05, 1200); break;
+      case 'enemyShot': this.tone(520 * r, 0.1, 'square', 0.035, 260); break;
+      case 'fuse': this.tone(1200, 0.06, 'square', 0.05); this.tone(1200, 0.06, 'square', 0.05, undefined, 0.12); break;
       case 'victory':
         [523, 659, 784, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, undefined, i * 0.12));
         break;

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { EVOLUTIONS, ITEMS, RUN_LENGTH, WEAPON_IDS, xpToNext } from '../game/data';
 import { COLORS, hex } from '../game/palette';
 import { sfx } from '../game/audio';
+import { music } from '../game/music';
 import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
@@ -233,6 +234,7 @@ export class UIScene extends Phaser.Scene {
       const save = loadSave();
       save.muted = !save.muted;
       sfx.setMuted(save.muted);
+      music.applyVolume();
       writeSave();
       this.banner(save.muted ? '已静音' : '声音开启');
       return;
@@ -494,15 +496,24 @@ export class UIScene extends Phaser.Scene {
 
       const muted = loadSave().muted;
       c.add(makeButton(this, w / 2, top + ph - 96, 200, 40, '继续游戏', () => this.primary?.(), COLORS.player));
-      const bw = Math.min(150, (pw - 60) / 2);
-      c.add(makeButton(this, w / 2 - bw / 2 - 8, top + ph - 44, bw, 36, muted ? '声音：关' : '声音：开', () => {
+      const bw = Math.min(140, (pw - 60) / 3);
+      const gap = bw + 10;
+      c.add(makeButton(this, w / 2 - gap, top + ph - 44, bw, 36, muted ? '声音：关' : '声音：开', () => {
         const save = loadSave();
         save.muted = !save.muted;
         sfx.setMuted(save.muted);
+        music.applyVolume();
         writeSave();
         this.rebuildModal?.();
       }, COLORS.dim, 15));
-      c.add(makeButton(this, w / 2 + bw / 2 + 8, top + ph - 44, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+      c.add(makeButton(this, w / 2, top + ph - 44, bw, 36, loadSave().music ? '音乐：开' : '音乐：关', () => {
+        const save = loadSave();
+        save.music = !save.music;
+        music.setEnabled(save.music);
+        writeSave();
+        this.rebuildModal?.();
+      }, COLORS.dim, 15));
+      c.add(makeButton(this, w / 2 + gap, top + ph - 44, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
     });
     this.primary = () => {
       this.closeModal();

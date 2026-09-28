@@ -1,6 +1,6 @@
 import { COLORS } from './palette';
 
-export type WeaponId = 'bolt' | 'orbit' | 'nova' | 'chain' | 'disc';
+export type WeaponId = 'bolt' | 'orbit' | 'nova' | 'chain' | 'disc' | 'laser' | 'frost' | 'mine';
 export type PassiveId =
   | 'might'
   | 'haste'
@@ -15,7 +15,9 @@ export type ItemId = WeaponId | PassiveId;
 
 /**
  * Generic per-level weapon numbers. Each weapon interprets `extra` differently:
- * orbit = orbit radius, nova = blast radius, chain = jump range, disc = throw range.
+ * orbit = orbit radius, nova = blast radius, chain = jump range, disc = throw range,
+ * laser = beam length, frost = aura radius, mine = blast radius.
+ * laser uses speed as beam duration, frost uses it as slow strength (0..1).
  */
 export interface WeaponStats {
   damage: number;
@@ -66,6 +68,18 @@ export const WEAPON_LEVELS: Record<WeaponId, WeaponStats[]> = {
     { damage: 12, cooldown: 1.8, count: 1, pierce: 999, area: 1, speed: 440, extra: 250, knockback: 110 },
     [{ count: 2 }, { damage: 18 }, { area: 1.3, extra: 300 }, { count: 3, damage: 24 }],
   ),
+  laser: levels(
+    { damage: 20, cooldown: 2.2, count: 1, pierce: 999, area: 1, speed: 0.35, extra: 520, knockback: 40 },
+    [{ damage: 28 }, { count: 2 }, { cooldown: 1.7, extra: 620 }, { damage: 38, count: 3 }],
+  ),
+  frost: levels(
+    { damage: 6, cooldown: 0.5, count: 1, pierce: 0, area: 1, speed: 0.35, extra: 90, knockback: 0 },
+    [{ extra: 105 }, { damage: 10, speed: 0.45 }, { extra: 125 }, { damage: 14, cooldown: 0.4, speed: 0.55 }],
+  ),
+  mine: levels(
+    { damage: 30, cooldown: 1.6, count: 1, pierce: 0, area: 1, speed: 0, extra: 70, knockback: 260 },
+    [{ count: 2 }, { damage: 45 }, { extra: 90, cooldown: 1.3 }, { count: 3, damage: 60 }],
+  ),
 };
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -88,6 +102,18 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   disc: {
     id: 'disc', kind: 'weapon', name: '回旋飞盘', icon: 'icon_disc', color: COLORS.disc, maxLevel: 5,
     desc: ['投掷穿透一切、会飞回来的飞盘', '飞盘 +1', '伤害 +6', '体积与射程提升', '飞盘 +1，伤害 +6'],
+  },
+  laser: {
+    id: 'laser', kind: 'weapon', name: '光束', icon: 'icon_laser', color: COLORS.laser, maxLevel: 5,
+    desc: ['射出贯穿一条直线的激光', '伤害 +8', '同时射出 2 道光束', '冷却缩短，射程更远', '伤害 +10，光束 +1'],
+  },
+  frost: {
+    id: 'frost', kind: 'weapon', name: '冰霜领域', icon: 'icon_frost', color: COLORS.frost, maxLevel: 5,
+    desc: ['身边的寒气持续伤害并减速敌人', '领域扩大', '伤害提升，减速更强', '领域扩大', '伤害与减速大幅提升'],
+  },
+  mine: {
+    id: 'mine', kind: 'weapon', name: '地雷', icon: 'icon_mine', color: COLORS.mine, maxLevel: 5,
+    desc: ['在脚下布雷，敌人踩到即爆炸', '每次布雷 +1', '伤害 +15', '爆炸范围扩大，布雷更快', '布雷 +1，伤害 +15'],
   },
   might: {
     id: 'might', kind: 'passive', name: '力量', icon: 'icon_might', color: 0xff6b6b, maxLevel: 5,
@@ -166,6 +192,21 @@ export const EVOLUTIONS: Record<WeaponId, EvolutionDef> = {
     desc: '飞盘在最远处裂变成三个小飞盘',
     stats: { damage: 30, cooldown: 1.5, count: 3, pierce: 999, area: 1.4, speed: 480, extra: 320, knockback: 130 },
   },
+  laser: {
+    weapon: 'laser', passive: 'speed', name: '湮灭光束', icon: 'icon_evo_laser', color: 0xffb3f0,
+    desc: '两道光束持续绕身旋转，切开一切',
+    stats: { damage: 18, cooldown: 0.25, count: 2, pierce: 999, area: 1.2, speed: 1.7, extra: 400, knockback: 60 },
+  },
+  frost: {
+    weapon: 'frost', passive: 'armor', name: '绝对零度', icon: 'icon_evo_frost', color: 0xe6fbff,
+    desc: '极寒领域，每 4 秒冻结范围内所有敌人',
+    stats: { damage: 20, cooldown: 0.35, count: 1, pierce: 0, area: 1, speed: 0.6, extra: 160, knockback: 0 },
+  },
+  mine: {
+    weapon: 'mine', passive: 'magnet', name: '磁暴雷阵', icon: 'icon_evo_mine', color: 0x7dff4d,
+    desc: '地雷吸引周围敌人，爆炸会连锁引爆',
+    stats: { damage: 90, cooldown: 1.1, count: 3, pierce: 0, area: 1, speed: 0, extra: 120, knockback: 300 },
+  },
 };
 
 /** passive id -> weapon it evolves */
@@ -173,7 +214,7 @@ export const EVOLVES_WEAPON: Partial<Record<PassiveId, WeaponId>> = Object.fromE
   Object.values(EVOLUTIONS).map((e) => [e.passive, e.weapon]),
 );
 
-export const WEAPON_IDS: WeaponId[] = ['bolt', 'orbit', 'nova', 'chain', 'disc'];
+export const WEAPON_IDS: WeaponId[] = ['bolt', 'orbit', 'nova', 'chain', 'disc', 'laser', 'frost', 'mine'];
 export const PASSIVE_IDS: PassiveId[] = ['might', 'haste', 'area', 'amount', 'speed', 'magnet', 'armor', 'vitality', 'growth'];
 
 export const MAX_WEAPONS = 4;
@@ -187,7 +228,7 @@ export function xpToNext(level: number): number {
 
 // ---------------------------------------------------------------- enemies
 
-export type EnemyKind = 'chaser' | 'bat' | 'brute' | 'boss';
+export type EnemyKind = 'chaser' | 'bat' | 'brute' | 'spitter' | 'splitter' | 'splitling' | 'bomber' | 'boss';
 
 export interface EnemyDef {
   tex: string;
@@ -202,12 +243,18 @@ export interface EnemyDef {
   faceMove: boolean;
   /** Max steering speed in rad/s. Unset = turns instantly (always heads straight at the player). */
   turnRate?: number;
+  /** special AI: keeps distance and shoots / splits on death / suicide-bombs */
+  behavior?: 'ranged' | 'splitter' | 'bomber';
 }
 
 export const ENEMY_DEFS: Record<EnemyKind, EnemyDef> = {
   chaser: { tex: 'e_chaser', hp: 9, speed: 72, damage: 8, radius: 12, xp: 1, color: COLORS.chaser, knockResist: 0, faceMove: true },
   bat: { tex: 'e_bat', hp: 6, speed: 95, damage: 5, radius: 9, xp: 1, color: COLORS.bat, knockResist: 0, faceMove: true, turnRate: 1.8 },
   brute: { tex: 'e_brute', hp: 70, speed: 46, damage: 15, radius: 20, xp: 5, color: COLORS.brute, knockResist: 0.6, faceMove: false },
+  spitter: { tex: 'e_spitter', hp: 22, speed: 64, damage: 7, radius: 13, xp: 2, color: COLORS.spitter, knockResist: 0.2, faceMove: true, behavior: 'ranged' },
+  splitter: { tex: 'e_splitter', hp: 40, speed: 52, damage: 10, radius: 16, xp: 2, color: COLORS.splitter, knockResist: 0.3, faceMove: false, behavior: 'splitter' },
+  splitling: { tex: 'e_splitling', hp: 8, speed: 92, damage: 5, radius: 8, xp: 1, color: COLORS.splitter, knockResist: 0, faceMove: false },
+  bomber: { tex: 'e_bomber', hp: 12, speed: 112, damage: 22, radius: 11, xp: 2, color: COLORS.bomber, knockResist: 0, faceMove: false, behavior: 'bomber' },
   boss: { tex: 'e_boss', hp: 1800, speed: 62, damage: 25, radius: 44, xp: 0, color: COLORS.boss, knockResist: 1, faceMove: false },
 };
 

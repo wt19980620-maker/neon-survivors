@@ -482,6 +482,269 @@ class DiscWeapon extends Weapon {
   }
 }
 
+// ------------------------------------------------------------------ 光束 / 湮灭光束
+
+interface Beam {
+  ang: number;
+  t: number;
+  src: number;
+}
+
+class LaserWeapon extends Weapon {
+  private beams: Beam[] = [];
+  private angle = 0;
+  private readonly spinSrc: number;
+
+  constructor(g: GameScene) {
+    super('laser', g);
+    this.spinSrc = g.newSourceId();
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    const len = s.extra * this.area();
+    const color = this.evolved ? EVOLUTIONS.laser.color : COLORS.laser;
+
+    if (this.evolved) {
+      // permanent rotating beams; each enemy can be cut once per `cooldown`
+      this.angle = (this.angle + s.speed * dt) % TAU;
+      const n = s.count + g.stats.amount;
+      const width = 12 * this.area();
+      for (let i = 0; i < n; i++) {
+        const a = this.angle + (i / n) * TAU;
+        this.sweep(a, len, width, this.spinSrc, s.cooldown);
+        g.addBeam(g.px, g.py, a, len, width, color, 1);
+      }
+      return;
+    }
+
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      const n = s.count + g.stats.amount;
+      const targets = g.nearestEnemies(g.px, g.py, len, n);
+      if (targets.length === 0) {
+        this.timer = 0.15;
+      } else {
+        this.timer = this.cooldown();
+        for (let i = 0; i < n; i++) {
+          const t = targets[i % targets.length];
+          // extra beams beyond the number of targets fan out a little
+          const spread = i >= targets.length ? (i - targets.length + 1) * 0.35 : 0;
+          this.beams.push({ ang: Math.atan2(t.y - g.py, t.x - g.px) + spread, t: s.speed, src: g.newSourceId() });
+        }
+        sfx.play('laser');
+      }
+    }
+
+    const width = 10 * this.area();
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      const b = this.beams[i];
+      b.t -= dt;
+      if (b.t <= 0) {
+        this.beams.splice(i, 1);
+        continue;
+      }
+      this.sweep(b.ang, len, width, b.src, 999);
+      g.addBeam(g.px, g.py, b.ang, len, width, color, b.t / s.speed);
+    }
+  }
+
+  /** Damage every enemy touching the beam; `interval` is the per-enemy re-hit delay for this source. */
+  private sweep(ang: number, len: number, width: number, src: number, interval: number) {
+    const g = this.g;
+    const cos = Math.cos(ang);
+    const sin = Math.sin(ang);
+    const dmg = this.damage();
+    for (const e of g.enemies) {
+      if (!e.alive) continue;
+      const dx = e.x - g.px;
+      const dy = e.y - g.py;
+      const u = dx * cos + dy * sin;
+      if (u < 0 || u > len + e.radius) continue;
+      if (Math.abs(-dx * sin + dy * cos) > width + e.radius) continue;
+      if ((e.hitUntil.get(src) ?? 0) > g.elapsed) continue;
+      e.hitUntil.set(src, g.elapsed + interval);
+      g.damageEnemy(e, dmg, 'laser', cos, sin, this.s.knockback);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ 冰霜领域 / 绝对零度
+
+class FrostWeapon extends Weapon {
+  private aura: Phaser.GameObjects.Image;
+  private ring: Phaser.GameObjects.Image;
+  private freezeT = 4;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('frost', g);
+    this.aura = g.add.image(g.px, g.py, 'glow').setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setTint(COLORS.frost).setAlpha(0.22);
+    this.ring = g.add.image(g.px, g.py, 'ring').setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setTint(COLORS.frost).setAlpha(0.3);
+  }
+
+  protected onEvolve() {
+    this.aura.setTint(EVOLUTIONS.frost.color);
+    this.ring.setTint(EVOLUTIONS.frost.color);
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    const r = s.extra * this.area();
+    const pulse = 1 + Math.sin(g.elapsed * 3) * 0.03;
+    this.aura.setPosition(g.px, g.py).setScale((r / 32) * pulse);
+    this.ring.setPosition(g.px, g.py).setScale((r / 110) * pulse).setRotation(g.elapsed * 0.3);
+
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      this.timer = this.cooldown();
+      const dmg = this.damage();
+      this.tmp.length = 0;
+      for (const e of g.queryEnemies(g.px, g.py, r, this.tmp)) {
+        g.damageEnemy(e, dmg, 'frost', 0, 0, 0);
+        g.slowEnemy(e, s.speed, this.timer + 0.25);
+      }
+    }
+
+    if (this.evolved) {
+      this.freezeT -= dt;
+      if (this.freezeT <= 0) {
+        this.freezeT = 4;
+        const fr = r * 1.3;
+        const dmg = 40 * g.stats.might;
+        this.tmp.length = 0;
+        for (const e of g.queryEnemies(g.px, g.py, fr, this.tmp)) {
+          g.freezeEnemy(e, 1.2);
+          g.damageEnemy(e, dmg, 'frost', 0, 0, 0);
+        }
+        g.addRing(g.px, g.py, fr, EVOLUTIONS.frost.color, 0.5);
+        sfx.play('freeze');
+      }
+    }
+  }
+
+  destroy() {
+    this.aura.destroy();
+    this.ring.destroy();
+  }
+}
+
+// ------------------------------------------------------------------ 地雷 / 磁暴雷阵
+
+interface Mine extends Pooled {
+  x: number;
+  y: number;
+  arm: number;
+  life: number;
+  /** >0 while waiting to be set off by a neighbouring blast */
+  chainT: number;
+}
+
+const MAX_MINES = 16;
+
+class MineWeapon extends Weapon {
+  private pool: Pool<Mine>;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('mine', g);
+    this.pool = new Pool<Mine>(() => ({
+      alive: false,
+      sprite: g.add.image(0, 0, 'mine').setDepth(6).setBlendMode(Phaser.BlendModes.ADD),
+      x: 0, y: 0, arm: 0, life: 0, chainT: -1,
+    }));
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      this.timer = this.cooldown();
+      const n = s.count + g.stats.amount;
+      for (let i = 0; i < n; i++) {
+        if (this.pool.active.length >= MAX_MINES) {
+          // recycle the oldest mine instead of piling up forever
+          this.pool.active[0].alive = false;
+          this.pool.compact();
+        }
+        const a = Math.random() * TAU;
+        const d = i === 0 ? 0 : 40 + Math.random() * 60;
+        const m = this.pool.get();
+        m.x = g.px + Math.cos(a) * d;
+        m.y = g.py + Math.sin(a) * d;
+        m.arm = 0.35;
+        m.life = 14;
+        m.chainT = -1;
+        m.sprite.setTexture(this.evolved ? 'mine_evo' : 'mine').setPosition(m.x, m.y).setAlpha(0.5).setScale(this.area());
+      }
+    }
+
+    const pullR = 150 * this.area();
+    for (const m of this.pool.active) {
+      if (!m.alive) continue;
+      m.life -= dt;
+      m.arm -= dt;
+      if (m.life <= 0) {
+        m.alive = false;
+        continue;
+      }
+      if (m.chainT > 0) {
+        m.chainT -= dt;
+        if (m.chainT <= 0) this.explode(m);
+        continue;
+      }
+      const armed = m.arm <= 0;
+      m.sprite.setAlpha(armed ? 0.75 + Math.sin(g.elapsed * 8 + m.x) * 0.25 : 0.4);
+      this.tmp.length = 0;
+      if (this.evolved && armed) {
+        // magnetic mines drag nearby enemies onto themselves
+        for (const e of g.queryEnemies(m.x, m.y, pullR, this.tmp)) {
+          if (e.boss) continue;
+          const dx = m.x - e.x;
+          const dy = m.y - e.y;
+          const len = Math.hypot(dx, dy) || 1;
+          e.x += (dx / len) * 120 * dt;
+          e.y += (dy / len) * 120 * dt;
+        }
+        this.tmp.length = 0;
+      }
+      if (armed && g.queryEnemies(m.x, m.y, 16, this.tmp).length > 0) this.explode(m);
+    }
+    this.pool.compact();
+  }
+
+  private explode(m: Mine) {
+    if (!m.alive) return;
+    m.alive = false;
+    const g = this.g;
+    const r = this.s.extra * this.area();
+    const dmg = this.damage();
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(m.x, m.y, r, this.tmp)) {
+      const dx = e.x - m.x;
+      const dy = e.y - m.y;
+      const len = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, dmg, 'mine', dx / len, dy / len, this.s.knockback);
+    }
+    const color = this.evolved ? EVOLUTIONS.mine.color : COLORS.mine;
+    g.addRing(m.x, m.y, r, color, 0.35);
+    g.burst(m.x, m.y, color, 14);
+    sfx.play('boom');
+    if (this.evolved) {
+      for (const o of this.pool.active) {
+        if (o.alive && o.chainT < 0 && (o.x - m.x) ** 2 + (o.y - m.y) ** 2 < (r * 1.3) ** 2) o.chainT = 0.09;
+      }
+    }
+  }
+
+  destroy() {
+    this.pool.releaseAll();
+  }
+}
+
 export function createWeapon(id: WeaponId, g: GameScene): Weapon {
   switch (id) {
     case 'bolt': return new BoltWeapon(g);
@@ -489,5 +752,8 @@ export function createWeapon(id: WeaponId, g: GameScene): Weapon {
     case 'nova': return new NovaWeapon(g);
     case 'chain': return new ChainWeapon(g);
     case 'disc': return new DiscWeapon(g);
+    case 'laser': return new LaserWeapon(g);
+    case 'frost': return new FrostWeapon(g);
+    case 'mine': return new MineWeapon(g);
   }
 }
