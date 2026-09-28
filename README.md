@@ -2,6 +2,10 @@
 
 霓虹几何风格的类幸存者（Vampire Survivors-like）网页游戏。Phaser 3 + TypeScript + Vite。
 
+**在线游玩：https://wt19980620-maker.github.io/neon-survivors/** （电脑和手机浏览器都可以）
+
+推送到 `main` 后 GitHub Actions 会自动构建并部署（`.github/workflows/deploy.yml`）。
+
 ## 运行
 
 ```bash
