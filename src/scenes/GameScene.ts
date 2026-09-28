@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
 import {
-  ENEMY_DEFS, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
-  type EnemyKind, type ItemId, type PassiveId, type WeaponId,
+  CHAR_BY_ID, ENEMY_DEFS, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
+  type CharId, type EnemyKind, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
+import {
+  checkAchievements, commitRun, isCharUnlocked, type AchievementDef, type RunSnapshot,
+} from '../game/achievements';
 import { COLORS, FONT } from '../game/palette';
 import { sfx } from '../game/audio';
 import { loadSave, metaRank, writeSave } from '../game/save';
@@ -55,6 +58,7 @@ export interface RunResult {
   totalGold: number;
   newBest: boolean;
   damage: { id: WeaponId; value: number; evolved: boolean }[];
+  achievements: AchievementDef[];
 }
 
 type ModalKind = 'level' | 'chest';
@@ -99,6 +103,13 @@ export class GameScene extends Phaser.Scene {
   private damageBy = new Map<WeaponId, number>();
   private pendingModals: ModalKind[] = [];
   private evoAnnounced = new Set<WeaponId>();
+  charId: CharId = 'runner';
+  private firstHurt = -1;
+  private boss1Killed = false;
+  private boss2Killed = false;
+  private achTimer = 1;
+  private runAchievements: AchievementDef[] = [];
+  private settled = false;
   private invuln = 0;
   private reviveUsed = false;
   private endTimer = 0;
@@ -130,14 +141,17 @@ export class GameScene extends Phaser.Scene {
 
   // ================================================================ lifecycle
 
-  create() {
+  create(data?: { char?: CharId }) {
     this.resetState();
+    const wanted = data?.char ?? loadSave().selectedChar;
+    this.charId = isCharUnlocked(wanted) ? wanted : 'runner';
+    const char = CHAR_BY_ID[this.charId];
 
     this.bg = this.add.tileSprite(0, 0, 64, 64, 'grid').setOrigin(0).setDepth(-10);
     this.aura = this.add.image(0, 0, 'glow').setDepth(29).setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(COLORS.player).setAlpha(0.3).setScale(1.8);
-    this.playerSprite = this.add.image(0, 0, 'player').setDepth(30);
-    this.dirSprite = this.add.image(0, 0, 'player_dir').setDepth(30);
+      .setTint(char.color).setAlpha(0.3).setScale(1.8);
+    this.playerSprite = this.add.image(0, 0, `player_${char.id}`).setDepth(30);
+    this.dirSprite = this.add.image(0, 0, `player_dir_${char.id}`).setDepth(30);
     this.fx = this.add.graphics().setDepth(40).setBlendMode(Phaser.BlendModes.ADD);
     this.overlay = this.add.graphics().setDepth(45);
 
@@ -166,7 +180,7 @@ export class GameScene extends Phaser.Scene {
     this.director = new Director(this);
     this.recomputeStats();
     this.hp = this.stats.maxHp;
-    this.addItem('bolt');
+    this.addItem(char.weapon);
 
     const onBlur = () => this.requestPause();
     window.addEventListener('blur', onBlur);
@@ -204,6 +218,12 @@ export class GameScene extends Phaser.Scene {
     this.evoAnnounced = new Set();
     this.invuln = 0;
     this.reviveUsed = false;
+    this.firstHurt = -1;
+    this.boss1Killed = false;
+    this.boss2Killed = false;
+    this.achTimer = 1;
+    this.runAchievements = [];
+    this.settled = false;
     this.endTimer = 0;
     this.sourceIds = 0;
     this.grid = new SpatialGrid(64);
@@ -230,6 +250,12 @@ export class GameScene extends Phaser.Scene {
 
     this.elapsed += dt;
     this.updatePlayer(dt);
+
+    this.achTimer -= dt;
+    if (this.achTimer <= 0) {
+      this.achTimer = 1;
+      this.pollAchievements(false);
+    }
 
     this.grid.clear();
     for (const e of this.enemies) this.grid.insert(e);
@@ -288,6 +314,7 @@ export class GameScene extends Phaser.Scene {
     const dmg = Math.max(1, amount - this.stats.armor);
     this.hp -= dmg;
     this.invuln = 0.45;
+    if (this.firstHurt < 0) this.firstHurt = this.elapsed;
     this.cameras.main.shake(120, 0.006);
     this.ui()?.flashDamage();
     this.number(this.px, this.py - 20, dmg, '#ff5c7a');
@@ -606,6 +633,8 @@ export class GameScene extends Phaser.Scene {
         this.dropPickup('gem', e.x + Math.cos(a) * 60, e.y + Math.sin(a) * 60, 12);
       }
       this.coins += e.finalBoss ? 60 : 30;
+      if (e.finalBoss) this.boss2Killed = true;
+      else this.boss1Killed = true;
       if (e.finalBoss) this.victory();
       return;
     }
@@ -909,18 +938,19 @@ export class GameScene extends Phaser.Scene {
 
   private recomputeStats() {
     const L = (id: ItemId) => this.itemLevels.get(id) ?? 0;
+    const m = CHAR_BY_ID[this.charId].mods;
     const prevMax = this.hasStats ? this.stats.maxHp : undefined;
     this.hasStats = true;
     this.stats = {
-      maxHp: 100 + metaRank('hp') * 10 + L('vitality') * 20,
-      regen: L('vitality') * 0.3,
-      speed: 165 * (1 + L('speed') * 0.08 + metaRank('speed') * 0.05),
-      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15),
-      might: 1 + L('might') * 0.1 + metaRank('might') * 0.05,
-      haste: 1 - L('haste') * 0.08,
-      area: 1 + L('area') * 0.1,
+      maxHp: Math.round((100 + metaRank('hp') * 10 + L('vitality') * 20) * (m.hp ?? 1)),
+      regen: L('vitality') * 0.3 + (m.regen ?? 0),
+      speed: 165 * (1 + L('speed') * 0.08 + metaRank('speed') * 0.05) * (m.speed ?? 1),
+      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15) * (m.magnet ?? 1),
+      might: (1 + L('might') * 0.1 + metaRank('might') * 0.05) * (m.might ?? 1),
+      haste: (1 - L('haste') * 0.08) * (m.cooldown ?? 1),
+      area: (1 + L('area') * 0.1) * (m.area ?? 1),
       amount: L('amount'),
-      armor: L('armor'),
+      armor: L('armor') + (m.armor ?? 0),
       growth: 1 + L('growth') * 0.1 + metaRank('growth') * 0.05,
       greed: 1 + metaRank('greed') * 0.1,
     };
@@ -952,26 +982,59 @@ export class GameScene extends Phaser.Scene {
     this.endTimer = delay;
   }
 
-  private finishRun() {
-    this.state = 'over';
+  private snapshot(ended: boolean): RunSnapshot {
+    return {
+      char: this.charId,
+      kills: this.kills,
+      level: this.level,
+      time: this.elapsed,
+      boss1: this.boss1Killed,
+      boss2: this.boss2Killed,
+      evolved: this.weapons.filter((w) => w.evolved).map((w) => w.id),
+      maxedWeapons: this.weapons.filter((w) => w.level >= ITEMS[w.id].maxLevel).length,
+      firstHurt: this.firstHurt,
+      ended,
+    };
+  }
+
+  private pollAchievements(ended: boolean) {
+    for (const a of checkAchievements(this.snapshot(ended))) {
+      this.runAchievements.push(a);
+      this.ui()?.toast(a);
+    }
+  }
+
+  /** Pays out gold, runs the final achievement check and folds the run into lifetime stats. Once per run. */
+  private settleRun() {
+    if (this.settled) return null;
+    this.settled = true;
     const save = loadSave();
+    const newBest = this.elapsed > save.best.time;
     const minutes = this.elapsed / 60;
     const gold = Math.floor((this.coins + this.kills * 0.02 + minutes * 8 + (this.endWin ? 150 : 0)) * this.stats.greed);
+    this.pollAchievements(true);
+    commitRun(this.snapshot(true));
     save.gold += gold;
-    const newBest = this.elapsed > save.best.time;
-    save.best.time = Math.max(save.best.time, this.elapsed);
-    save.best.kills = Math.max(save.best.kills, this.kills);
-    save.best.level = Math.max(save.best.level, this.level);
-    if (this.endWin) save.best.wins++;
     writeSave();
+    return { gold, newBest };
+  }
 
+  /** Leaving mid-run still counts: gold, stats and achievements are kept. */
+  abandonRun() {
+    this.settleRun();
+  }
+
+  private finishRun() {
+    this.state = 'over';
+    const settled = this.settleRun() ?? { gold: 0, newBest: false };
     const damage = [...this.damageBy.entries()]
       .map(([id, value]) => ({ id, value, evolved: !!this.weapons.find((w) => w.id === id)?.evolved }))
       .sort((a, b) => b.value - a.value);
     this.scene.pause();
     this.ui()?.showResult({
       win: this.endWin, time: this.elapsed, level: this.level, kills: this.kills,
-      gold, totalGold: save.gold, newBest, damage,
+      gold: settled.gold, totalGold: loadSave().gold, newBest: settled.newBest, damage,
+      achievements: this.runAchievements,
     });
   }
 

@@ -239,3 +239,67 @@ export function metaCost(def: MetaDef, rank: number): number {
 }
 
 export const RUN_LENGTH = 600; // seconds until the final boss arrives
+
+// ---------------------------------------------------------------- characters
+
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk';
+
+/** Multipliers default to 1, additive bonuses to 0. */
+export interface CharMods {
+  hp?: number;
+  speed?: number;
+  might?: number;
+  cooldown?: number;
+  area?: number;
+  magnet?: number;
+  armor?: number;
+  regen?: number;
+}
+
+export interface CharDef {
+  id: CharId;
+  name: string;
+  color: number;
+  weapon: WeaponId;
+  desc: string;
+  mods: CharMods;
+  /** achievement that unlocks this character; none = available from the start */
+  unlock?: string;
+}
+
+export const CHARACTERS: CharDef[] = [
+  { id: 'runner', name: '霓光行者', color: 0x5ef2ff, weapon: 'bolt', desc: '均衡型，适合新手', mods: {} },
+  {
+    id: 'guardian', name: '重甲守卫', color: 0x9aa8ff, weapon: 'orbit', desc: '血厚甲硬，但移动较慢',
+    mods: { hp: 1.5, armor: 2, speed: 0.9 }, unlock: 'boss1',
+  },
+  {
+    id: 'assassin', name: '疾风刺客', color: 0x7dffb0, weapon: 'disc', desc: '迅捷致命，但非常脆弱',
+    mods: { speed: 1.2, might: 1.15, hp: 0.7 }, unlock: 'run_kills',
+  },
+  {
+    id: 'storm', name: '雷鸣术士', color: 0xfff27a, weapon: 'chain', desc: '技能冷却更快，范围更大',
+    mods: { cooldown: 0.85, area: 1.1, hp: 0.9 }, unlock: 'evolve1',
+  },
+  {
+    id: 'monk', name: '脉冲修士', color: 0xff6b8b, weapon: 'nova', desc: '持续回复生命，拾取范围大',
+    mods: { regen: 1, magnet: 1.5, might: 0.9 }, unlock: 'level25',
+  },
+];
+
+export const CHAR_BY_ID = Object.fromEntries(CHARACTERS.map((c) => [c.id, c])) as Record<CharId, CharDef>;
+
+/** Human-readable stat lines for a character card. */
+export function charModLines(m: CharMods): string[] {
+  const pct = (v: number) => `${v > 1 ? '+' : ''}${Math.round((v - 1) * 100)}%`;
+  const out: string[] = [];
+  if (m.hp) out.push(`生命 ${pct(m.hp)}`);
+  if (m.armor) out.push(`护甲 +${m.armor}`);
+  if (m.speed) out.push(`移速 ${pct(m.speed)}`);
+  if (m.might) out.push(`伤害 ${pct(m.might)}`);
+  if (m.cooldown) out.push(`冷却 ${pct(m.cooldown)}`);
+  if (m.area) out.push(`范围 ${pct(m.area)}`);
+  if (m.magnet) out.push(`拾取 ${pct(m.magnet)}`);
+  if (m.regen) out.push(`回复 +${m.regen}/秒`);
+  return out;
+}

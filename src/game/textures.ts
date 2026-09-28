@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, FONT, hex } from './palette';
-import { EVOLUTIONS } from './data';
+import { CHARACTERS, EVOLUTIONS, type CharId } from './data';
 
 type Draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -139,22 +139,35 @@ function glyphIcon(scene: Phaser.Scene, key: string, color: number, glyph: strin
 }
 
 export function generateTextures(scene: Phaser.Scene) {
-  // --- player
-  make(scene, 'player', 48, 48, (ctx, w, h) => {
-    neon(ctx, COLORS.player, () => ctx.arc(w / 2, h / 2, 12, 0, Math.PI * 2), { fill: 0.35, line: 3, blur: 14 });
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  make(scene, 'player_dir', 48, 48, (ctx, w, h) => {
-    neon(ctx, COLORS.player, () => {
-      ctx.moveTo(w / 2 + 22, h / 2);
-      ctx.lineTo(w / 2 + 15, h / 2 - 5);
-      ctx.lineTo(w / 2 + 15, h / 2 + 5);
-      ctx.closePath();
-    }, { fill: 0.9, line: 1.5, blur: 6 });
-  });
+  // --- players: each character has its own colour and silhouette
+  const bodies: Record<CharId, (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void> = {
+    runner: (ctx, cx, cy) => ctx.arc(cx, cy, 12, 0, Math.PI * 2),
+    guardian: (ctx, cx, cy) => poly(ctx, cx, cy, 13, 6, Math.PI / 6),
+    assassin: (ctx, cx, cy) => poly(ctx, cx, cy, 14, 4),
+    storm: (ctx, cx, cy) => star(ctx, cx, cy, 15, 7, 5, -Math.PI / 2),
+    monk: (ctx, cx, cy) => {
+      ctx.arc(cx, cy, 13, 0, Math.PI * 2);
+      ctx.moveTo(cx + 8, cy);
+      ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    },
+  };
+  for (const c of CHARACTERS) {
+    make(scene, `player_${c.id}`, 48, 48, (ctx, w, h) => {
+      neon(ctx, c.color, () => bodies[c.id](ctx, w / 2, h / 2), { fill: 0.35, line: 3, blur: 14 });
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    make(scene, `player_dir_${c.id}`, 48, 48, (ctx, w, h) => {
+      neon(ctx, c.color, () => {
+        ctx.moveTo(w / 2 + 22, h / 2);
+        ctx.lineTo(w / 2 + 15, h / 2 - 5);
+        ctx.lineTo(w / 2 + 15, h / 2 + 5);
+        ctx.closePath();
+      }, { fill: 0.9, line: 1.5, blur: 6 });
+    });
+  }
 
   // --- enemies
   make(scene, 'e_chaser', 40, 40, (ctx, w, h) => {
@@ -306,6 +319,9 @@ export function generateTextures(scene: Phaser.Scene) {
   glyphIcon(scene, 'icon_coin', 0xffd24d, '金');
   glyphIcon(scene, 'icon_revive', 0xffffff, '魂');
   glyphIcon(scene, 'icon_heal', COLORS.heart, '愈');
+  glyphIcon(scene, 'icon_lock', COLORS.dim, '锁');
+  glyphIcon(scene, 'icon_trophy', COLORS.elite, '奖');
+  glyphIcon(scene, 'icon_trophy_off', COLORS.panelEdge, '奖');
 
   // --- evolved weapons: recoloured world sprites + gold-framed icons with a star badge
   const E = EVOLUTIONS;

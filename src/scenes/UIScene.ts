@@ -5,6 +5,7 @@ import { sfx } from '../game/audio';
 import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
+import { charUnlockedBy, type AchievementDef } from '../game/achievements';
 import type { GameScene, RunResult, UpgradeOption } from './GameScene';
 
 type ModalKind = 'level' | 'pause' | 'result';
@@ -34,6 +35,8 @@ export class UIScene extends Phaser.Scene {
   private primary: (() => void) | null = null;
   private joyBase = { x: 0, y: 0 };
   private joyPointer = -1;
+  private toastQueue: AchievementDef[] = [];
+  private toastBusy = false;
 
   constructor() {
     super('UI');
@@ -48,6 +51,8 @@ export class UIScene extends Phaser.Scene {
     this.primary = null;
     this.iconSig = '';
     this.joyPointer = -1;
+    this.toastQueue = [];
+    this.toastBusy = false;
     inputState.active = false;
 
     this.vignette = this.add.graphics().setAlpha(0).setDepth(5);
@@ -175,6 +180,43 @@ export class UIScene extends Phaser.Scene {
     b.setAlpha(0).setScale(0.8);
     this.tweens.add({ targets: b, alpha: 1, scale: 1, duration: 250, ease: 'Back.Out' });
     this.tweens.add({ targets: b, alpha: 0, delay: 2200, duration: 500 });
+  }
+
+  /** Achievement popup, top-right, one at a time. */
+  toast(a: AchievementDef) {
+    this.toastQueue.push(a);
+    if (!this.toastBusy) this.nextToast();
+  }
+
+  private nextToast() {
+    const a = this.toastQueue.shift();
+    if (!a) {
+      this.toastBusy = false;
+      return;
+    }
+    this.toastBusy = true;
+    const w = this.scale.width;
+    const tw = Math.min(290, w - 24);
+    const th = 64;
+    const unlock = charUnlockedBy(a.id);
+    const x = w - 12 - tw / 2;
+    const y = 96;
+    const c = this.add.container(w + tw, y).setDepth(110);
+    c.add(this.add.rectangle(0, 0, tw, th, COLORS.panel, 0.96).setStrokeStyle(2, COLORS.elite, 1));
+    c.add(this.add.image(-tw / 2 + 32, 0, 'icon_trophy').setDisplaySize(42, 42));
+    c.add(this.add.text(-tw / 2 + 62, -th / 2 + 8, '成就达成', style(11, COLORS.dim)));
+    c.add(glowText(this.add.text(-tw / 2 + 62, -th / 2 + 22, a.name, style(17, COLORS.elite, true)), COLORS.elite, 6));
+    const reward = unlock ? `+${a.gold} 金 · 解锁角色「${unlock.name}」` : `+${a.gold} 金`;
+    c.add(this.add.text(-tw / 2 + 62, th / 2 - 8, reward, style(12, unlock ? unlock.color : COLORS.coin)).setOrigin(0, 1));
+    sfx.play('chest');
+    this.tweens.add({ targets: c, x, duration: 320, ease: 'Cubic.Out' });
+    this.tweens.add({
+      targets: c, x: w + tw, delay: 3000, duration: 300, ease: 'Cubic.In',
+      onComplete: () => {
+        c.destroy();
+        this.nextToast();
+      },
+    });
   }
 
   flashDamage() {
@@ -471,7 +513,7 @@ export class UIScene extends Phaser.Scene {
   showResult(r: RunResult) {
     this.openModal('result', (c, w, h) => {
       const pw = Math.min(540, w - 32);
-      const ph = Math.min(520, h - 32);
+      const ph = Math.min(r.achievements.length ? 580 : 520, h - 32);
       const top = h / 2 - ph / 2;
       const color = r.win ? COLORS.coin : COLORS.hp;
       c.add(panel(this, w / 2, h / 2, pw, ph, color));
@@ -490,10 +532,23 @@ export class UIScene extends Phaser.Scene {
         c.add(this.add.text(w / 2 + pw / 2 - 40, y, v, style(16, COLORS.text, true)).setOrigin(1, 0));
       });
 
-      const dmgTop = top + 242;
+      let achH = 0;
+      if (r.achievements.length) {
+        const names = r.achievements.map((a) => {
+          const unlock = charUnlockedBy(a.id);
+          return unlock ? `${a.name}（解锁${unlock.name}）` : a.name;
+        });
+        const t = this.add.text(w / 2 - pw / 2 + 40, top + 232, `★ 新成就：${names.join('、')}`, {
+          ...style(14, COLORS.elite, true), wordWrap: { width: pw - 80, useAdvancedWrap: true },
+        });
+        c.add(t);
+        achH = t.height + 12;
+      }
+
+      const dmgTop = top + 242 + achH;
       c.add(this.add.text(w / 2 - pw / 2 + 40, dmgTop, '武器伤害', style(14, COLORS.dim)));
       const maxDmg = Math.max(1, ...r.damage.map((d) => d.value));
-      const rows = r.damage.slice(0, Math.max(1, Math.floor((ph - 360) / 34)));
+      const rows = r.damage.slice(0, Math.max(1, Math.floor((ph - 360 - achH) / 34)));
       rows.forEach((d, i) => {
         const y = dmgTop + 36 + i * 34;
         const def = d.evolved ? EVOLUTIONS[d.id] : ITEMS[d.id];
@@ -515,12 +570,14 @@ export class UIScene extends Phaser.Scene {
   }
 
   private retry() {
+    const char = this.gs.charId;
     this.closeModal();
     this.scene.stop('Game');
-    this.scene.start('Game');
+    this.scene.start('Game', { char });
   }
 
   private toMenu() {
+    this.gs.abandonRun();
     this.closeModal();
     this.scene.stop('Game');
     this.scene.start('Menu');

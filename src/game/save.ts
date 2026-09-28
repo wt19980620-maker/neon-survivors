@@ -1,16 +1,39 @@
-import type { MetaId } from './data';
+import type { CharId, MetaId, WeaponId } from './data';
+
+/** Lifetime totals, used by achievements. Only updated when a run ends. */
+export interface LifetimeStats {
+  kills: number;
+  runs: number;
+  boss1: number;
+  boss2: number;
+  evolved: WeaponId[];
+  winChars: CharId[];
+  bestMaxed: number;
+  untouched: number;
+}
 
 export interface SaveData {
   gold: number;
   meta: Partial<Record<MetaId, number>>;
   best: { time: number; kills: number; level: number; wins: number };
+  stats: LifetimeStats;
+  achievements: string[];
+  selectedChar: CharId;
   muted: boolean;
 }
 
 const KEY = 'neon-survivors-save-v1';
 
 function defaults(): SaveData {
-  return { gold: 0, meta: {}, best: { time: 0, kills: 0, level: 0, wins: 0 }, muted: false };
+  return {
+    gold: 0,
+    meta: {},
+    best: { time: 0, kills: 0, level: 0, wins: 0 },
+    stats: { kills: 0, runs: 0, boss1: 0, boss2: 0, evolved: [], winChars: [], bestMaxed: 0, untouched: 0 },
+    achievements: [],
+    selectedChar: 'runner',
+    muted: false,
+  };
 }
 
 let cache: SaveData | null = null;
@@ -22,7 +45,24 @@ export function loadSave(): SaveData {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SaveData>;
-      data = { ...data, ...parsed, best: { ...data.best, ...(parsed.best ?? {}) }, meta: { ...(parsed.meta ?? {}) } };
+      // merge nested objects so saves from older versions pick up new fields
+      data = {
+        ...data,
+        ...parsed,
+        best: { ...data.best, ...(parsed.best ?? {}) },
+        stats: { ...data.stats, ...(parsed.stats ?? {}) },
+        meta: { ...(parsed.meta ?? {}) },
+        achievements: [...(parsed.achievements ?? [])],
+      };
+      if (!parsed.stats) {
+        // pre-achievement save: infer what we can from the best records so progress isn't lost
+        const b = data.best;
+        data.stats.runs = b.time > 0 ? 1 : 0;
+        data.stats.kills = b.kills;
+        data.stats.boss1 = b.wins;
+        data.stats.boss2 = b.wins;
+        if (b.wins > 0) data.stats.winChars = ['runner'];
+      }
     }
   } catch {
     // storage unavailable or corrupt: play with defaults
