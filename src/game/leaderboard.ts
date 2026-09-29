@@ -43,11 +43,23 @@ export function computeScore(r: RunScore) {
   return Math.floor(r.time) * 10 + r.kills + r.level * 20 + (r.win ? 3000 : 0);
 }
 
+/** RFC 4122 v4 UUID; the column is `uuid`, so it must be well-formed even on older browsers. */
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 /** Stable anonymous id so the board can show each player's best run once. */
 export function playerId(): string {
   const s = loadSave();
   if (!s.playerId) {
-    s.playerId = crypto.randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`.padEnd(36, '0');
+    s.playerId = uuid();
     writeSave();
   }
   return s.playerId;
