@@ -916,13 +916,13 @@ class MeteorWeapon extends Weapon {
     const s = this.s;
     this.timer -= dt;
     if (this.timer <= 0) {
-      this.tmp.length = 0;
-      const pool = g.queryEnemies(g.px, g.py, 450, this.tmp).slice();
+      const n = s.count + g.stats.amount;
+      // random picks among the closest few: spread out, but still where the threat (and the gems) are
+      const pool = g.nearestEnemies(g.px, g.py, 450, Math.max(4, n * 3));
       if (pool.length === 0) {
         this.timer = 0.2;
       } else {
         this.timer = this.cooldown();
-        const n = s.count + g.stats.amount;
         for (let i = 0; i < n; i++) {
           // random targets spread the shower over the crowd; staggered so they rain rather than land at once
           const e = pool.length ? pool.splice(Math.floor(Math.random() * pool.length), 1)[0] : null;

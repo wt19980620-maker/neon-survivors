@@ -319,6 +319,12 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     assassin: (ctx, cx, cy) => poly(ctx, cx, cy, 14, 4),
     storm: (ctx, cx, cy) => star(ctx, cx, cy, 15, 7, 5, -Math.PI / 2),
     pyro: (ctx, cx, cy) => poly(ctx, cx, cy + 2, 15, 3, -Math.PI / 2),
+    astro: (ctx, cx, cy) => {
+      // crescent moon opening to the right
+      ctx.arc(cx, cy, 14, Math.PI * 0.28, Math.PI * 1.72);
+      ctx.arc(cx + 7, cy, 10, Math.PI * 1.45, Math.PI * 0.55, true);
+      ctx.closePath();
+    },
     monk: (ctx, cx, cy) => {
       ctx.arc(cx, cy, 13, 0, Math.PI * 2);
       ctx.moveTo(cx + 8, cy);

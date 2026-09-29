@@ -431,7 +431,7 @@ export const ENDLESS_EVENT_EVERY = 75;
 
 // ---------------------------------------------------------------- characters
 
-export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro';
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro';
 
 /** Multipliers default to 1, additive bonuses to 0. */
 export interface CharMods {
@@ -443,6 +443,8 @@ export interface CharMods {
   magnet?: number;
   armor?: number;
   regen?: number;
+  /** experience gain multiplier */
+  growth?: number;
 }
 
 export interface CharDef {
@@ -477,6 +479,10 @@ export const CHARACTERS: CharDef[] = [
   {
     id: 'pyro', name: '烈焰术士', color: 0xff8a3d, weapon: 'fireball', desc: '火力凶猛，但步伐稍慢',
     mods: { might: 1.1, area: 1.2, speed: 0.95 }, unlock: 'survive8',
+  },
+  {
+    id: 'astro', name: '观星者', color: 0xd98cff, weapon: 'meteor', desc: '成长迅速，但体质孱弱',
+    mods: { growth: 1.25, area: 1.1, hp: 0.85 }, unlock: 'full_build',
   },
 ];
 
@@ -537,5 +543,6 @@ export function charModLines(m: CharMods): string[] {
   if (m.area) out.push(`范围 ${pct(m.area)}`);
   if (m.magnet) out.push(`拾取 ${pct(m.magnet)}`);
   if (m.regen) out.push(`回复 +${m.regen}/秒`);
+  if (m.growth) out.push(`经验 ${pct(m.growth)}`);
   return out;
 }

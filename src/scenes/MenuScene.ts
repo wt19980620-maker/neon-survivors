@@ -264,7 +264,9 @@ export class MenuScene extends Phaser.Scene {
     const ins = safeArea();
     const short = isShort(h);
     // landscape phones get the row of cards too, just shorter
-    const wide = w >= 900 || (short && canSplit(w));
+    // ...unless the row of cards would be too narrow for their text
+    const rowCw = (w - 60 - ins.left - ins.right - 14 * (CHARACTERS.length - 1)) / CHARACTERS.length;
+    const wide = (w >= 900 || (short && canSplit(w))) && rowCw >= 90;
     const titleY = ins.top + (short ? 24 : wide ? h * 0.12 : 40);
     c.add(glowText(this.add.text(w / 2, titleY, '选择角色', style(short ? 24 : wide ? 36 : 28, COLORS.player, true)).setOrigin(0.5), COLORS.player, 14));
     // mode toggle: top-right when there's room, otherwise it takes the subtitle's place under the title
@@ -300,12 +302,14 @@ export class MenuScene extends Phaser.Scene {
       } else {
         // list rows; two columns when a single column would squash them (landscape phones)
         const avail = cardsBottom - 34 - cardsTop;
-        const gap = 8;
+        const gap = n > 6 ? 5 : 8;
         const cols = avail / n - gap < 50 && w >= 540 ? 2 : 1;
         const rows = Math.ceil(n / cols);
         cw = Math.min(460, (w - 24 - ins.left - ins.right - gap * (cols - 1)) / cols);
         chh = Math.min(96, avail / rows - gap);
-        x = w / 2 - ((cols - 1) * (cw + gap)) / 2 + (i % cols) * (cw + gap);
+        // an odd card out in the last row sits centred
+        const inRow = Math.min(cols, n - Math.floor(i / cols) * cols);
+        x = w / 2 - ((inRow - 1) * (cw + gap)) / 2 + (i % cols) * (cw + gap);
         y = cardsTop + chh / 2 + Math.floor(i / cols) * (chh + gap);
       }
       const card = this.add.container(x, y);

@@ -1429,7 +1429,7 @@ export class GameScene extends Phaser.Scene {
       area: (1 + L('area') * 0.1) * (m.area ?? 1),
       amount: L('amount'),
       armor: L('armor') + (m.armor ?? 0),
-      growth: 1 + L('growth') * 0.1 + metaRank('growth') * 0.05,
+      growth: (1 + L('growth') * 0.1 + metaRank('growth') * 0.05) * (m.growth ?? 1),
       greed: 1 + metaRank('greed') * 0.1,
     };
     if (prevMax !== undefined && this.stats.maxHp > prevMax) this.hp += this.stats.maxHp - prevMax;
