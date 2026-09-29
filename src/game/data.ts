@@ -431,7 +431,7 @@ export const ENDLESS_EVENT_EVERY = 75;
 
 // ---------------------------------------------------------------- characters
 
-export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro';
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro' | 'wind';
 
 /** Multipliers default to 1, additive bonuses to 0. */
 export interface CharMods {
@@ -483,6 +483,10 @@ export const CHARACTERS: CharDef[] = [
   {
     id: 'astro', name: '观星者', color: 0xd98cff, weapon: 'meteor', desc: '成长迅速，但体质孱弱',
     mods: { growth: 1.25, area: 1.1, hp: 0.85 }, unlock: 'full_build',
+  },
+  {
+    id: 'wind', name: '御风者', color: 0xb8fff0, weapon: 'cyclone', desc: '身轻如风，但力量偏弱',
+    mods: { speed: 1.1, magnet: 1.3, might: 0.9 }, unlock: 'untouched',
   },
 ];
 

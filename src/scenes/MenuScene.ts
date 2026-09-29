@@ -303,7 +303,9 @@ export class MenuScene extends Phaser.Scene {
         // list rows; two columns when a single column would squash them (landscape phones)
         const avail = cardsBottom - 34 - cardsTop;
         const gap = n > 6 ? 5 : 8;
-        const cols = avail / n - gap < 50 && w >= 540 ? 2 : 1;
+        // two columns when rows get squashed: at 50px on wide screens, at 42px (too short for two lines) on any
+        const perRow = avail / n - gap;
+        const cols = (perRow < 50 && w >= 540) || perRow < 42 ? 2 : 1;
         const rows = Math.ceil(n / cols);
         cw = Math.min(460, (w - 24 - ins.left - ins.right - gap * (cols - 1)) / cols);
         chh = Math.min(96, avail / rows - gap);
@@ -349,6 +351,22 @@ export class MenuScene extends Phaser.Scene {
         } else if (selected) {
           card.add(this.add.text(0, chh / 2 - 14, '✓ 已选择', style(14, ch.color, true)).setOrigin(0.5, 1));
         }
+      } else if (cw < 200) {
+        // stacked card for two narrow columns on small portrait phones: icon + name on top, details below
+        const left = -cw / 2;
+        const top = -chh / 2;
+        card.add(this.add.image(left + 20, top + 20, `player_${ch.id}`).setScale(1.0 * texScale()).setAlpha(unlocked ? 1 : 0.25));
+        if (!unlocked) card.add(this.add.image(left + 20, top + 20, 'icon_lock').setDisplaySize(22, 22));
+        card.add(this.add.text(left + 40, top + 20, ch.name, style(15, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0, 0.5));
+        card.add(this.add.image(cw / 2 - 16, top + 20, weapon.icon).setDisplaySize(20, 20).setAlpha(unlocked ? 1 : 0.4));
+        if (selected) card.add(this.add.text(cw / 2 - 30, top + 20, '✓', style(15, ch.color, true)).setOrigin(1, 0.5));
+        // two stats per line so a wrap never starts a line with the separator
+        const stats = lines.length ? [lines.slice(0, 2).join(' · '), lines.slice(2).join(' · ')].filter(Boolean).join('\n') : '均衡，无属性修正';
+        // unlock text without spaces wraps per character instead of breaking oddly at "前 3 / 分钟"
+        const sub = !unlocked && unlockAch ? `解锁：${unlockAch.desc.replace(/ /g, '')}` : stats;
+        card.add(this.add.text(left + 10, top + 36, sub, {
+          ...style(11, !unlocked ? COLORS.elite : COLORS.text), wordWrap: { width: cw - 20, useAdvancedWrap: true }, lineSpacing: 1,
+        }));
       } else {
         const left = -cw / 2;
         // short rows pull the name and the detail line closer together
