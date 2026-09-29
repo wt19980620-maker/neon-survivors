@@ -187,7 +187,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyPool = new Pool<Enemy>(() => new Enemy(this.add.image(0, 0, 'e_chaser').setDepth(10)));
     this.pickupPool = new Pool<Pickup>(() => ({
       alive: false, sprite: this.add.image(0, 0, 'gem1').setDepth(5),
-      kind: 'gem', x: 0, y: 0, value: 0, attracted: false, v: 0, t: 0, age: 0,
+      kind: 'gem', x: 0, y: 0, value: 0, attracted: false, v: 0, t: 0,
     }));
     this.bulletPool = new Pool<EnemyBullet>(() => ({
       alive: false, sprite: this.add.image(0, 0, 'ebullet').setDepth(25).setBlendMode(Phaser.BlendModes.ADD).setScale(k),
@@ -862,7 +862,6 @@ export class GameScene extends Phaser.Scene {
     p.attracted = false;
     p.v = 0;
     p.t = Math.random() * 10;
-    p.age = 0;
     const tex = kind === 'gem' ? this.gemTex(value) : kind;
     p.sprite.setTexture(tex).setPosition(x, y).setScale(texScale()).setDepth(kind === 'gem' ? 5 : 6);
   }
@@ -877,10 +876,8 @@ export class GameScene extends Phaser.Scene {
     const grab = PLAYER_R + 10;
     // litter control: once the floor is crowded, gems left far behind fade away
     const far = this.pickupPool.active.length > 450 ? (this.viewRadius() * 2.5) ** 2 : Infinity;
-    const driftR2 = (this.viewRadius() * 1.5) ** 2;
     for (const p of this.pickupPool.active) {
       p.t += dt;
-      p.age += dt;
       const dx = this.px - p.x;
       const dy = this.py - p.y;
       const d2 = dx * dx + dy * dy;
@@ -898,11 +895,6 @@ export class GameScene extends Phaser.Scene {
         const step = Math.min(p.v * dt, d);
         p.x += (dx / d) * step;
         p.y += (dy / d) * step;
-      } else if (p.kind === 'gem' && p.age > 6 && d2 < driftR2) {
-        // catch-up: xp left behind while kiting slowly trails after the player
-        const d = Math.sqrt(d2) || 1;
-        p.x += (dx / d) * 60 * dt;
-        p.y += (dy / d) * 60 * dt;
       }
       if (d2 < grab * grab) {
         this.collect(p);

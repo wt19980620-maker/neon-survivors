@@ -97,8 +97,6 @@ export interface Pickup extends Pooled {
   attracted: boolean;
   v: number;
   t: number;
-  /** seconds since dropped */
-  age: number;
 }
 
 export interface EnemyBullet extends Pooled {
