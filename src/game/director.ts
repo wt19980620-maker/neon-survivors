@@ -1,5 +1,7 @@
-import type { EnemyKind } from './data';
-import { ENDLESS_BOSS_EVERY, ENDLESS_BOSS_SCALE, ENDLESS_EVENT_EVERY, RUN_LENGTH } from './data';
+import type { AffixId, BossId, EnemyKind } from './data';
+import {
+  AFFIX_IDS, AFFIXES, BOSSES, BOSS_IDS, CHAMPION, ENDLESS_BOSS_EVERY, ENDLESS_BOSS_SCALE, ENDLESS_EVENT_EVERY, MID_BOSSES, RUN_LENGTH,
+} from './data';
 import { sfx } from './audio';
 import type { GameScene } from '../scenes/GameScene';
 
@@ -19,17 +21,18 @@ export class Director {
   private nextEvent = RUN_LENGTH + 40;
   /** endless bosses spawned so far (the regular two don't count) */
   bossWave = 0;
+  private lastBoss: BossId = 'void';
 
   constructor(private readonly g: GameScene) {
     this.events = [
       { t: 150, done: false, run: () => this.ring('chaser', 32, '被包围了！') },
-      { t: 300, done: false, run: () => this.boss(false) },
+      { t: 300, done: false, run: () => this.boss(pick(MID_BOSSES)) },
       { t: 390, done: false, run: () => this.rush('bat', 70, '蜂群来袭！') },
       { t: 340, done: false, run: () => this.ring('spitter', 14, '远程火力网！') },
       { t: 450, done: false, run: () => this.ring('brute', 22, '重甲方阵！') },
       { t: 565, done: false, run: () => this.rush('bomber', 26, '自爆虫潮！') },
       { t: 520, done: false, run: () => this.rush('chaser', 80, '潮水涌来！') },
-      { t: RUN_LENGTH, done: false, run: () => this.boss(true) },
+      { t: RUN_LENGTH, done: false, run: () => this.boss('void') },
     ];
   }
 
@@ -62,8 +65,8 @@ export class Director {
       if (t >= this.nextBoss) {
         this.nextBoss += ENDLESS_BOSS_EVERY;
         this.bossWave++;
-        // alternate the two bosses, each wave tougher than the last
-        this.boss(this.bossWave % 2 === 0, ENDLESS_BOSS_SCALE ** this.bossWave);
+        // any boss but the previous one, each wave tougher than the last
+        this.boss(pick(BOSS_IDS.filter((b) => b !== this.lastBoss)), ENDLESS_BOSS_SCALE ** this.bossWave);
       }
       if (t >= this.nextEvent) {
         this.nextEvent += ENDLESS_EVENT_EVERY;
@@ -74,7 +77,10 @@ export class Director {
     if (t >= this.nextElite) {
       this.nextElite += 75;
       const p = g.spawnPoint();
-      g.spawnEnemy('brute', p.x, p.y, { elite: true });
+      // later elites come in more shapes and wear more affixes
+      const kind: EnemyKind = t < 240 ? 'brute' : pick(['brute', 'brute', 'splitter', 'spitter']);
+      const n = t < 300 ? 1 : t < RUN_LENGTH ? 2 : 3;
+      g.spawnEnemy(kind, p.x, p.y, { elite: true, affixes: rollAffixes(n, false) });
     }
 
     const m = t / 60;
@@ -122,8 +128,18 @@ export class Director {
       g.spawnEnemy('bomber', p.x + 30, p.y + 30);
       this.acc -= 1;
     } else {
-      g.spawnEnemy(kind, p.x, p.y);
+      g.spawnEnemy(kind, p.x, p.y, this.championRoll(t, kind) ? { affixes: rollAffixes(1, true) } : {});
     }
+  }
+
+  /** From 3:00 on, a growing share of ordinary enemies spawn as single-affix champions. */
+  private championRoll(t: number, kind: EnemyKind) {
+    if (t < 180 || kind === 'splitling' || kind === 'bomber' || kind === 'bat') return false;
+    const chance = Math.min(0.035, 0.008 + ((t - 180) / 60) * 0.004);
+    if (Math.random() >= chance) return false;
+    let alive = 0;
+    for (const e of this.g.affixed) if (e.alive && e.champion) alive++;
+    return alive < CHAMPION.maxAlive;
   }
 
   private ring(kind: EnemyKind, n: number, text: string) {
@@ -165,14 +181,27 @@ export class Director {
     pool[Math.floor(Math.random() * pool.length)]();
   }
 
-  private boss(final: boolean, hpScale = 1) {
+  private boss(id: BossId, hpScale = 1) {
     const g = this.g;
     const p = g.spawnPoint();
-    g.spawnEnemy('boss', p.x, p.y, { boss: true, final, hpScale });
-    const name = final ? '虚空之主' : '猩红守望者';
-    const title = this.bossWave > 0 ? `第 ${this.bossWave} 波首领` : final ? '最终首领' : '首领来袭';
-    g.ui()?.banner(`${title} · ${name}`, true);
+    g.spawnEnemy('boss', p.x, p.y, { boss: id, hpScale });
+    this.lastBoss = id;
+    const def = BOSSES[id];
+    const title = this.bossWave > 0 ? `第 ${this.bossWave} 波首领` : id === 'void' ? '最终首领' : '首领来袭';
+    g.ui()?.banner(`${title} · ${def.name}`, true, def.color);
     sfx.play('boss');
     g.shake(400, 0.006);
   }
+}
+
+function pick<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/** `n` distinct affixes; champions only draw from the champion-safe ones. */
+function rollAffixes(n: number, champion: boolean): AffixId[] {
+  const pool = AFFIX_IDS.filter((a) => !champion || AFFIXES[a].champion);
+  const out: AffixId[] = [];
+  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out;
 }

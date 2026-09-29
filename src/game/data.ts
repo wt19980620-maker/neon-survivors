@@ -228,7 +228,7 @@ export function xpToNext(level: number): number {
 
 // ---------------------------------------------------------------- enemies
 
-export type EnemyKind = 'chaser' | 'bat' | 'brute' | 'spitter' | 'splitter' | 'splitling' | 'bomber' | 'boss';
+export type EnemyKind = 'chaser' | 'bat' | 'brute' | 'spitter' | 'splitter' | 'splitling' | 'bomber' | 'egg' | 'boss';
 
 export interface EnemyDef {
   tex: string;
@@ -243,8 +243,8 @@ export interface EnemyDef {
   faceMove: boolean;
   /** Max steering speed in rad/s. Unset = turns instantly (always heads straight at the player). */
   turnRate?: number;
-  /** special AI: keeps distance and shoots / splits on death / suicide-bombs */
-  behavior?: 'ranged' | 'splitter' | 'bomber';
+  /** special AI: keeps distance and shoots / splits on death / suicide-bombs / sits still and hatches */
+  behavior?: 'ranged' | 'splitter' | 'bomber' | 'egg';
 }
 
 export const ENEMY_DEFS: Record<EnemyKind, EnemyDef> = {
@@ -255,8 +255,85 @@ export const ENEMY_DEFS: Record<EnemyKind, EnemyDef> = {
   splitter: { tex: 'e_splitter', hp: 40, speed: 52, damage: 10, radius: 16, xp: 2, color: COLORS.splitter, knockResist: 0.3, faceMove: false, behavior: 'splitter' },
   splitling: { tex: 'e_splitling', hp: 8, speed: 92, damage: 5, radius: 8, xp: 1, color: COLORS.splitter, knockResist: 0, faceMove: false },
   bomber: { tex: 'e_bomber', hp: 12, speed: 112, damage: 22, radius: 11, xp: 2, color: COLORS.bomber, knockResist: 0, faceMove: false, behavior: 'bomber' },
+  egg: { tex: 'e_egg', hp: 45, speed: 0, damage: 0, radius: 14, xp: 2, color: COLORS.hive, knockResist: 1, faceMove: false, behavior: 'egg' },
   boss: { tex: 'e_boss', hp: 1800, speed: 62, damage: 25, radius: 44, xp: 0, color: COLORS.boss, knockResist: 1, faceMove: false },
 };
+
+// ---------------------------------------------------------------- bosses
+
+export type BossId = 'warden' | 'hive' | 'prism' | 'void';
+
+export interface BossDef {
+  id: BossId;
+  name: string;
+  tex: string;
+  color: number;
+  /** sprite tint, for bosses sharing a texture */
+  tint?: number;
+  hp: number;
+  damage: number;
+  speed: number;
+  scale: number;
+}
+
+export const BOSSES: Record<BossId, BossDef> = {
+  /** ring volleys and charges */
+  warden: { id: 'warden', name: '猩红守望者', tex: 'e_boss', color: COLORS.boss, hp: 3500, damage: 24, speed: 64, scale: 1 },
+  /** lays eggs that hatch into bat swarms, spits acid fans */
+  hive: { id: 'hive', name: '蜂巢母体', tex: 'e_boss_hive', color: COLORS.hive, hp: 3000, damage: 22, speed: 50, scale: 1 },
+  /** stops to sweep the arena with rotating beams; terrain blocks them */
+  prism: { id: 'prism', name: '棱镜巨像', tex: 'e_boss_prism', color: COLORS.prism, hp: 3800, damage: 24, speed: 46, scale: 1 },
+  /** the warden's moves, faster, plus a spiral barrage below half health */
+  void: { id: 'void', name: '虚空之主', tex: 'e_boss', color: 0xc79bff, tint: 0xc79bff, hp: 14000, damage: 32, speed: 74, scale: 1.3 },
+};
+
+/** the 5:00 boss is one of these, picked at random each run */
+export const MID_BOSSES: BossId[] = ['warden', 'hive', 'prism'];
+export const BOSS_IDS: BossId[] = ['warden', 'hive', 'prism', 'void'];
+
+// ---------------------------------------------------------------- affixes
+
+/**
+ * Random modifiers. Elites (every 75 s) roll 1–3; from 3:00 on, a few ordinary enemies
+ * spawn as "champions" with a single champion-safe affix.
+ */
+export type AffixId = 'swift' | 'shield' | 'regen' | 'volley' | 'summon' | 'blink' | 'split';
+
+export interface AffixDef {
+  id: AffixId;
+  name: string;
+  color: number;
+  /** can appear on champions (ordinary enemies), not only elites */
+  champion: boolean;
+}
+
+export const AFFIXES: Record<AffixId, AffixDef> = {
+  swift: { id: 'swift', name: '迅捷', color: 0x7dffb0, champion: true },
+  shield: { id: 'shield', name: '护盾', color: 0x7cd8ff, champion: true },
+  regen: { id: 'regen', name: '再生', color: 0xff6b8b, champion: true },
+  volley: { id: 'volley', name: '弹幕', color: 0xff7a3d, champion: true },
+  summon: { id: 'summon', name: '召唤', color: 0xc05cff, champion: false },
+  blink: { id: 'blink', name: '闪现', color: 0xb58cff, champion: false },
+  split: { id: 'split', name: '裂变', color: 0x4d7cff, champion: false },
+};
+
+export const AFFIX_IDS = Object.keys(AFFIXES) as AffixId[];
+
+export const AFFIX_TUNING = {
+  swiftSpeed: 1.6,
+  /** shield = this fraction of max hp, refills after `shieldDelay` s without being hit */
+  shieldFrac: 0.4,
+  shieldDelay: 3,
+  /** fraction of max hp per second, while not hit for `regenDelay` s */
+  regen: 0.03,
+  regenDelay: 1.5,
+  volleyEvery: 3.2,
+  summonEvery: 4.5,
+  blinkEvery: 5,
+};
+
+/** champion = ordinary enemy with one affix */
+export const CHAMPION = { hp: 4, damage: 1.2, scale: 1.3, xp: 6, maxAlive: 5 };
 
 // ---------------------------------------------------------------- meta progression
 

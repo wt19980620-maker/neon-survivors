@@ -1,4 +1,4 @@
-import { CHARACTERS, MAPS, type CharId, type GameMode, type MapId, type WeaponId } from './data';
+import { CHARACTERS, MAPS, type BossId, type CharId, type GameMode, type MapId, type WeaponId } from './data';
 import { loadSave, writeSave, type LifetimeStats, type SaveData } from './save';
 
 /** What happened in the current (or just-finished) run. */
@@ -10,6 +10,8 @@ export interface RunSnapshot {
   time: number;
   boss1: boolean;
   boss2: boolean;
+  /** boss kinds defeated this run */
+  bosses: BossId[];
   evolved: WeaponId[];
   maxedWeapons: number;
   /** game time of the first damage taken, -1 if untouched so far */
@@ -38,7 +40,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     value: (s, r) => s.stats.runs + (r?.ended ? 1 : 0),
   },
   {
-    id: 'boss1', name: '首领克星', desc: '击败猩红守望者', gold: 50, target: 1,
+    id: 'boss1', name: '首领克星', desc: '击败 5:00 出现的首领', gold: 50, target: 1,
     value: (s, r) => s.stats.boss1 + (r?.boss1 ? 1 : 0),
   },
   {
@@ -88,6 +90,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'endless20', name: '深渊行者', desc: '无尽模式存活 20 分钟', gold: 400, target: 1200,
     value: (s, r) => Math.floor(Math.max(s.stats.endlessBest, r?.mode === 'endless' ? r.time : 0)),
+  },
+  {
+    id: 'boss_all', name: '首领图鉴', desc: '累计击败全部 4 种首领', gold: 300, target: 4,
+    value: (s, r) => union(s.stats.bossKinds, r?.bosses ?? []),
   },
   {
     id: 'win3', name: '众志成城', desc: '用 3 个不同角色通关', gold: 500, target: 3,
@@ -158,6 +164,7 @@ export function commitRun(run: RunSnapshot) {
   if (run.boss1) st.boss1 += 1;
   if (run.boss2) st.boss2 += 1;
   st.evolved = [...new Set([...st.evolved, ...run.evolved])];
+  st.bossKinds = [...new Set([...st.bossKinds, ...run.bosses])];
   if (run.boss2 && !st.winChars.includes(run.char)) st.winChars.push(run.char);
   st.bestMaxed = Math.max(st.bestMaxed, run.maxedWeapons);
   if (run.mode === 'endless') st.endlessBest = Math.max(st.endlessBest, run.time);

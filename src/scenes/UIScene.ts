@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { EVOLUTIONS, ITEMS, RUN_LENGTH, WEAPON_IDS, xpToNext } from '../game/data';
+import { BOSSES, EVOLUTIONS, ITEMS, RUN_LENGTH, WEAPON_IDS, xpToNext } from '../game/data';
 import { COLORS, hex } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
@@ -154,10 +154,15 @@ export class UIScene extends Phaser.Scene {
       const bw = Math.min(460, w * 0.6);
       const x = (w - bw) / 2;
       const y = 74 + this.ins.top;
+      const def = BOSSES[boss.bossId ?? 'warden'];
       bb.fillStyle(0x000000, 0.6).fillRect(x - 2, y - 2, bw + 4, 14);
-      bb.fillStyle(COLORS.boss, 1).fillRect(x, y, bw * Phaser.Math.Clamp(boss.hp / boss.maxHp, 0, 1), 10);
+      bb.fillStyle(def.color, 1).fillRect(x, y, bw * Phaser.Math.Clamp(boss.hp / boss.maxHp, 0, 1), 10);
       bb.lineStyle(1, 0xffffff, 0.5).strokeRect(x - 2, y - 2, bw + 4, 14);
-      this.bossName.setText(boss.finalBoss ? '虚空之主' : '猩红守望者').setPosition(w / 2, y - 4).setVisible(true);
+      if (this.bossName.text !== def.name) {
+        this.bossName.setText(def.name).setColor(hex(def.color));
+        glowText(this.bossName, def.color, 8);
+      }
+      this.bossName.setPosition(w / 2, y - 4).setVisible(true);
     } else {
       this.bossName.setVisible(false);
     }

@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import {
-  CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
-  type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
+  AFFIXES, AFFIX_TUNING, BOSSES, CHAMPION, CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS,
+  PASSIVE_IDS, WEAPON_IDS, xpToNext,
+  type AffixId, type BossId, type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import {
   checkAchievements, commitRun, isCharUnlocked, isMapUnlocked, type AchievementDef, type RunSnapshot,
 } from '../game/achievements';
-import { COLORS, FONT } from '../game/palette';
+import { COLORS, FONT, hex } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
 import { loadSave, metaRank, writeSave } from '../game/save';
@@ -99,6 +100,8 @@ export class GameScene extends Phaser.Scene {
   itemLevels = new Map<ItemId, number>();
   passiveOrder: PassiveId[] = [];
   bosses: Enemy[] = [];
+  /** elites and champions, i.e. enemies wearing an affix label */
+  affixed: Enemy[] = [];
 
   // --- internals
   private director!: Director;
@@ -124,6 +127,8 @@ export class GameScene extends Phaser.Scene {
   private firstHurt = -1;
   private boss1Killed = false;
   private boss2Killed = false;
+  private bossKinds = new Set<BossId>();
+  private freeLabels: Phaser.GameObjects.Text[] = [];
   private achTimer = 1;
   private runAchievements: AchievementDef[] = [];
   private settled = false;
@@ -248,6 +253,9 @@ export class GameScene extends Phaser.Scene {
     this.itemLevels = new Map();
     this.passiveOrder = [];
     this.bosses = [];
+    this.affixed = [];
+    this.freeLabels = [];
+    this.bossKinds = new Set();
     this.numbers = [];
     this.lightning = [];
     this.emitters = new Map();
@@ -312,6 +320,7 @@ export class GameScene extends Phaser.Scene {
     this.pickupPool.compact();
     this.bulletPool.compact();
     if (this.bosses.length) this.bosses = this.bosses.filter((b) => b.alive);
+    if (this.affixed.length) this.releaseLabels();
 
     if (this.state === 'playing' && this.pendingModals.length > 0) this.openModal();
   }
@@ -421,7 +430,7 @@ export class GameScene extends Phaser.Scene {
     return this.bosses.length > 0;
   }
 
-  spawnEnemy(kind: EnemyKind, x: number, y: number, opts: { elite?: boolean; boss?: boolean; final?: boolean; hpScale?: number } = {}) {
+  spawnEnemy(kind: EnemyKind, x: number, y: number, opts: { elite?: boolean; boss?: BossId; hpScale?: number; affixes?: AffixId[] } = {}) {
     const def = ENEMY_DEFS[kind];
     const e = this.enemyPool.get();
     const d = this.director;
@@ -433,7 +442,10 @@ export class GameScene extends Phaser.Scene {
     e.vy = 0;
     e.elite = !!opts.elite;
     e.boss = !!opts.boss;
-    e.finalBoss = !!opts.final;
+    e.bossId = opts.boss ?? null;
+    e.finalBoss = opts.boss === 'void';
+    e.affixes = opts.affixes ?? [];
+    e.champion = !e.elite && !e.boss && e.affixes.length > 0;
     e.flash = 0;
     e.hitUntil.clear();
     e.heading = Math.atan2(this.py - y, this.px - x);
@@ -448,6 +460,7 @@ export class GameScene extends Phaser.Scene {
     let damage = def.damage * d.dmgMult();
     let speed = def.speed * d.speedMult() * (0.9 + Math.random() * 0.2);
     let scale = 1;
+    let tex = def.tex;
     e.xp = def.xp;
 
     if (e.elite) {
@@ -456,36 +469,86 @@ export class GameScene extends Phaser.Scene {
       speed *= 0.95;
       scale = 1.5;
     }
-    if (e.boss) {
-      hp = (e.finalBoss ? 14000 : 3500) * this.mapDef.hpMult * (opts.hpScale ?? 1);
-      damage = e.finalBoss ? 32 : 24;
-      speed = e.finalBoss ? 74 : 64;
-      scale = e.finalBoss ? 1.3 : 1;
+    if (e.champion) {
+      hp *= CHAMPION.hp;
+      damage *= CHAMPION.damage;
+      scale = CHAMPION.scale;
+      e.xp = def.xp * CHAMPION.xp;
+    }
+    if (opts.boss) {
+      const b = BOSSES[opts.boss];
+      hp = b.hp * this.mapDef.hpMult * (opts.hpScale ?? 1);
+      damage = b.damage;
+      speed = b.speed;
+      scale = b.scale;
+      tex = b.tex;
       e.shotT = 2.5;
-      e.dashT = 5;
+      e.dashT = opts.boss === 'hive' ? 3 : 5;
       e.telegraph = 0;
       e.dashing = 0;
       e.shotRot = 0;
+      e.phase = 0;
+      e.specState = 0;
+      e.specT = 3;
+      e.spiralRot = 0;
+      e.beamN = 0;
       this.bosses.push(e);
     }
+    if (e.affixes.includes('swift')) speed *= AFFIX_TUNING.swiftSpeed;
+    e.maxShield = e.shield = e.affixes.includes('shield') ? hp * AFFIX_TUNING.shieldFrac : 0;
+    e.lastHit = this.elapsed;
+    e.affixT = 1.5 + Math.random() * 1.5;
+    e.blinkT = AFFIX_TUNING.blinkEvery;
+    e.blinkTele = 0;
 
     e.hp = e.maxHp = hp;
     e.damage = damage;
     e.speed = speed;
     e.radius = def.radius * scale;
     e.baseScale = scale * texScale();
-    e.sprite.setTexture(def.tex).setPosition(x, y).setScale(e.baseScale).setRotation(0).setAlpha(1)
-      .setDepth(e.boss ? 12 : e.elite ? 11 : 10);
+    e.sprite.setTexture(tex).setPosition(x, y).setScale(e.baseScale).setRotation(0).setAlpha(1)
+      .setDepth(e.boss ? 12 : e.elite || e.champion ? 11 : 10);
     this.restoreTint(e);
+    if (e.label) this.freeLabel(e);
+    if (e.affixes.length) this.attachLabel(e);
     return e;
+  }
+
+  // ---------------------------------------------------------------- affix labels
+
+  private attachLabel(e: Enemy) {
+    let t = this.freeLabels.pop();
+    if (!t) {
+      t = this.add.text(0, 0, '', {
+        fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#ffffff', stroke: '#07060f', strokeThickness: 4, resolution: res(),
+      }).setOrigin(0.5, 1).setDepth(46);
+    }
+    const color = e.elite ? COLORS.elite : AFFIXES[e.affixes[0]].color;
+    t.setText(e.affixes.map((a) => AFFIXES[a].name).join(' · ')).setColor(hex(color)).setVisible(true).setAlpha(1);
+    e.label = t;
+    if (!this.affixed.includes(e)) this.affixed.push(e);
+  }
+
+  private freeLabel(e: Enemy) {
+    if (!e.label) return;
+    e.label.setVisible(false);
+    this.freeLabels.push(e.label);
+    e.label = null;
+  }
+
+  /** After the pool compacts: hand labels of dead enemies back. */
+  private releaseLabels() {
+    for (const e of this.affixed) if (!e.alive) this.freeLabel(e);
+    this.affixed = this.affixed.filter((e) => e.alive && e.label);
   }
 
   private restoreTint(e: Enemy) {
     const frozen = e.freezeUntil > this.elapsed;
     const iced = frozen || (e.slowUntil > this.elapsed && e.slow >= 0.3);
     e.iced = iced;
+    const bossTint = e.bossId ? BOSSES[e.bossId].tint : undefined;
     if (e.elite) e.sprite.setTint(COLORS.elite);
-    else if (e.finalBoss) e.sprite.setTint(0xc79bff);
+    else if (bossTint) e.sprite.setTint(bossTint);
     else if (iced) e.sprite.setTint(frozen ? 0xe6fbff : COLORS.frost);
     else e.sprite.clearTint();
   }
@@ -502,15 +565,20 @@ export class GameScene extends Phaser.Scene {
     e.freezeUntil = Math.max(e.freezeUntil, this.elapsed + dur);
   }
 
-  private enemyShot(e: Enemy, nx: number, ny: number) {
+  private fireBullet(x: number, y: number, ang: number, speed: number, damage: number, tex = 'ebullet', life = 4) {
     const b = this.bulletPool.get();
-    b.x = e.x + nx * e.radius;
-    b.y = e.y + ny * e.radius;
-    b.vx = nx * 190;
-    b.vy = ny * 190;
-    b.life = 3.5;
-    b.damage = e.damage;
-    b.sprite.setPosition(b.x, b.y);
+    b.x = x;
+    b.y = y;
+    b.vx = Math.cos(ang) * speed;
+    b.vy = Math.sin(ang) * speed;
+    b.life = life;
+    b.damage = damage;
+    b.sprite.setTexture(tex).setPosition(x, y);
+    return b;
+  }
+
+  private enemyShot(e: Enemy, nx: number, ny: number) {
+    this.fireBullet(e.x + nx * e.radius, e.y + ny * e.radius, Math.atan2(ny, nx), 190, e.damage, 'ebullet', 3.5);
     sfx.play('enemyShot');
   }
 
@@ -547,6 +615,11 @@ export class GameScene extends Phaser.Scene {
       let d = Math.hypot(dx, dy) || 1;
 
       if (d > relocate) {
+        if (e.def.behavior === 'egg') {
+          // left far behind: just let it go
+          e.alive = false;
+          continue;
+        }
         const p = this.spawnPoint();
         e.x = p.x;
         e.y = p.y;
@@ -626,13 +699,24 @@ export class GameScene extends Phaser.Scene {
             e.sprite.setTint(0xffffff);
             sfx.play('fuse');
           }
+        } else if (behavior === 'egg') {
+          speedMul = 0;
+          if (!frozen) e.fuse -= dt;
+          // swells and throbs in its last moments so there's a cue to break it
+          if (e.fuse < 1.5) e.sprite.setScale(e.baseScale * (1.1 + 0.12 * Math.abs(Math.sin(e.fuse * 12))));
+          if (e.fuse <= 0) {
+            this.hatch(e);
+            continue;
+          }
         }
 
         e.x += (mx * e.speed * speedMul + e.vx) * dt + sx * Math.min(1, dt * 12);
         e.y += (my * e.speed * speedMul + e.vy) * dt + sy * Math.min(1, dt * 12);
         if (behavior === 'ranged') e.sprite.rotation = Math.atan2(dy, dx);
+        else if (behavior === 'egg') e.sprite.rotation = Math.sin(this.elapsed * 3 + e.x) * 0.15;
         else if (e.def.faceMove) e.sprite.rotation = Math.atan2(my, mx);
         else e.sprite.rotation += dt * 0.8 * slowMul;
+        if (e.affixes.length && !frozen) this.updateAffixes(e, dt, d);
       }
       e.vx *= damp;
       e.vy *= damp;
@@ -648,13 +732,97 @@ export class GameScene extends Phaser.Scene {
         if (iced !== e.iced) this.restoreTint(e);
       }
 
-      // bombers only hurt by exploding; frozen enemies are harmless
+      // bombers only hurt by exploding, eggs not at all; frozen enemies are harmless
       const rr = e.radius + PLAYER_R - 3;
-      if (d < rr && behavior !== 'bomber' && !frozen) this.hurt(e.damage);
+      if (d < rr && behavior !== 'bomber' && behavior !== 'egg' && !frozen) this.hurt(e.damage);
+    }
+  }
+
+  private updateAffixes(e: Enemy, dt: number, d: number) {
+    const T = AFFIX_TUNING;
+    const quiet = this.elapsed - e.lastHit;
+    const has = (a: AffixId) => e.affixes.includes(a);
+    if (has('shield') && e.shield < e.maxShield && quiet > T.shieldDelay) {
+      e.shield = e.maxShield;
+      this.addRing(e.x, e.y, e.radius * 2.4, AFFIXES.shield.color, 0.35);
+    }
+    if (has('regen') && quiet > T.regenDelay && e.hp < e.maxHp) {
+      e.hp = Math.min(e.maxHp, e.hp + e.maxHp * T.regen * dt);
+    }
+    const volley = has('volley');
+    const summon = has('summon');
+    if (volley || summon) {
+      e.affixT -= dt;
+      if (e.affixT <= 0) {
+        e.affixT = summon ? T.summonEvery : T.volleyEvery;
+        if (d < 620) {
+          if (volley) {
+            const n = e.elite ? 12 : 8;
+            const off = Math.random() * TAU;
+            for (let i = 0; i < n; i++) this.fireBullet(e.x, e.y, off + (i / n) * TAU, 170, e.damage * 0.5);
+            sfx.play('enemyShot');
+          }
+          if (summon && this.enemies.length < 440) {
+            for (let i = 0; i < 4; i++) {
+              const a = (i / 4) * TAU + Math.random();
+              this.spawnEnemy('chaser', e.x + Math.cos(a) * (e.radius + 26), e.y + Math.sin(a) * (e.radius + 26));
+            }
+            this.addRing(e.x, e.y, e.radius * 3, AFFIXES.summon.color, 0.4);
+          }
+        }
+      }
+    }
+    if (has('blink')) {
+      if (e.blinkTele > 0) {
+        e.blinkTele -= dt;
+        if (e.blinkTele <= 0) {
+          this.burst(e.x, e.y, AFFIXES.blink.color, 14);
+          e.x = e.blinkX;
+          e.y = e.blinkY;
+          this.burst(e.x, e.y, AFFIXES.blink.color, 14);
+          sfx.play('zap');
+        }
+      } else {
+        e.blinkT -= dt;
+        if (e.blinkT <= 0 && d > 200 && d < 800) {
+          // pops up beside the player after a short, clearly marked wind-up
+          e.blinkT = T.blinkEvery;
+          e.blinkTele = 0.7;
+          const a = Math.random() * TAU;
+          e.blinkX = this.px + Math.cos(a) * 130;
+          e.blinkY = this.py + Math.sin(a) * 130;
+        }
+      }
+    }
+  }
+
+  /** Egg timer ran out: a small flock bursts out. Not a kill. */
+  private hatch(e: Enemy) {
+    e.alive = false;
+    this.burst(e.x, e.y, COLORS.hive, 12);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU + Math.random() * 0.5;
+      this.spawnEnemy('bat', e.x + Math.cos(a) * 12, e.y + Math.sin(a) * 12);
     }
   }
 
   private updateBoss(e: Enemy, dt: number, nx: number, ny: number, d: number) {
+    if (e.bossId === 'hive') this.updateHive(e, dt, nx, ny, d);
+    else if (e.bossId === 'prism') this.updatePrism(e, dt, nx, ny, d);
+    else this.updateWarden(e, dt, nx, ny, d);
+  }
+
+  /** Warden and Void Lord: walk, ring volleys, telegraphed charges. The Void Lord adds a spiral at half health. */
+  private updateWarden(e: Enemy, dt: number, nx: number, ny: number, d: number) {
+    const def = BOSSES[e.bossId ?? 'warden'];
+    if (e.finalBoss && e.phase === 0 && e.hp < e.maxHp * 0.5) {
+      e.phase = 1;
+      e.specT = 0.8;
+      this.ui()?.banner(`${def.name} · 狂暴`, true, def.color);
+      this.addRing(e.x, e.y, 360, def.color, 0.8);
+      this.shake(400, 0.008);
+      sfx.play('warn');
+    }
     if (e.telegraph > 0) {
       e.telegraph -= dt;
       e.sprite.setScale(e.baseScale * (1 + Math.sin(e.telegraph * 40) * 0.05));
@@ -666,7 +834,7 @@ export class GameScene extends Phaser.Scene {
       e.dashing -= dt;
       e.x += e.dvx * dt;
       e.y += e.dvy * dt;
-      if (Math.random() < 0.6) this.burst(e.x, e.y, COLORS.boss, 1);
+      if (Math.random() < 0.6) this.burst(e.x, e.y, def.color, 1);
     } else {
       e.x += (nx * e.speed + e.vx) * dt;
       e.y += (ny * e.speed + e.vy) * dt;
@@ -683,6 +851,19 @@ export class GameScene extends Phaser.Scene {
         e.dvx = nx * sp;
         e.dvy = ny * sp;
       }
+      if (e.phase === 1) {
+        // three-armed spiral in 2 s bursts, 3 s apart
+        e.specState += dt;
+        if (e.specState % 5 < 2) {
+          e.specT -= dt;
+          if (e.specT <= 0) {
+            e.specT = 0.13;
+            for (let k = 0; k < 3; k++) this.fireBullet(e.x, e.y, e.spiralRot + (k / 3) * TAU, 150, e.damage * 0.4, 'ebullet_void', 5.5);
+            e.spiralRot += 0.3;
+            sfx.play('bossShot');
+          }
+        }
+      }
     }
     e.sprite.rotation += dt * (e.dashing > 0 ? 9 : 1.2);
   }
@@ -691,19 +872,118 @@ export class GameScene extends Phaser.Scene {
     const enraged = e.hp < e.maxHp * 0.5;
     const n = (e.finalBoss ? 22 : 16) + (enraged ? 8 : 0);
     const speed = e.finalBoss ? 215 : 180;
-    for (let i = 0; i < n; i++) {
-      const a = e.shotRot + (i / n) * TAU;
-      const b = this.bulletPool.get();
-      b.x = e.x;
-      b.y = e.y;
-      b.vx = Math.cos(a) * speed;
-      b.vy = Math.sin(a) * speed;
-      b.life = 5;
-      b.damage = e.damage * 0.5;
-      b.sprite.setPosition(b.x, b.y);
-    }
+    const tex = e.finalBoss ? 'ebullet_void' : 'ebullet';
+    for (let i = 0; i < n; i++) this.fireBullet(e.x, e.y, e.shotRot + (i / n) * TAU, speed, e.damage * 0.5, tex, 5);
     e.shotRot += 0.23;
     sfx.play('bossShot');
+  }
+
+  /** Hive Mother: hangs back, spits acid fans and lays eggs that hatch into bats unless broken. */
+  private updateHive(e: Enemy, dt: number, nx: number, ny: number, d: number) {
+    const enraged = e.hp < e.maxHp * 0.5;
+    const pace = d > 220 ? 1 : 0.25;
+    e.x += (nx * e.speed * pace + e.vx) * dt;
+    e.y += (ny * e.speed * pace + e.vy) * dt;
+    e.shotT -= dt;
+    if (e.shotT <= 0 && d < 700) {
+      e.shotT = enraged ? 2 : 2.6;
+      const n = enraged ? 7 : 5;
+      const base = Math.atan2(ny, nx);
+      for (let i = 0; i < n; i++) {
+        this.fireBullet(e.x + nx * e.radius, e.y + ny * e.radius, base + (i - (n - 1) / 2) * 0.2, 210, e.damage * 0.5, 'ebullet_acid', 4);
+      }
+      sfx.play('bossShot');
+    }
+    e.dashT -= dt;
+    if (e.dashT <= 0) {
+      e.dashT = enraged ? 4.5 : 6;
+      const n = enraged ? 4 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * TAU;
+        const r = e.radius + 30 + Math.random() * 70;
+        const egg = this.spawnEnemy('egg', e.x + Math.cos(a) * r, e.y + Math.sin(a) * r);
+        egg.fuse = 4.5;
+        this.burst(egg.x, egg.y, COLORS.hive, 6);
+      }
+      this.addRing(e.x, e.y, e.radius * 2.5, COLORS.hive, 0.5);
+      sfx.play('fuse');
+    }
+    e.sprite.rotation += dt * 0.5;
+    e.sprite.setScale(e.baseScale * (1 + Math.sin(this.elapsed * 3) * 0.04));
+  }
+
+  /** Prism Colossus: drifts and fires shard triplets, then plants itself and sweeps rotating beams. */
+  private updatePrism(e: Enemy, dt: number, nx: number, ny: number, d: number) {
+    const enraged = e.hp < e.maxHp * 0.5;
+    const color = COLORS.prism;
+    e.specT -= dt;
+    if (e.specState === 0) {
+      e.x += (nx * e.speed + e.vx) * dt;
+      e.y += (ny * e.speed + e.vy) * dt;
+      e.shotT -= dt;
+      if (e.shotT <= 0 && d < 700) {
+        e.shotT = 1.5;
+        const base = Math.atan2(ny, nx);
+        for (let i = -1; i <= 1; i++) this.fireBullet(e.x + nx * e.radius, e.y + ny * e.radius, base + i * 0.14, 250, e.damage * 0.5, 'ebullet_prism', 4);
+        sfx.play('bossShot');
+      }
+      e.sprite.rotation += dt * 0.8;
+      if (e.specT <= 0 && d < 700) {
+        e.specState = 1;
+        e.specT = 1.1;
+        e.beamN = enraged ? 4 : 3;
+        // the player starts in a gap between two beams
+        e.beamAng = Math.atan2(ny, nx) + Math.PI / e.beamN;
+        e.beamSpin = (Math.random() < 0.5 ? -1 : 1) * (enraged ? 0.62 : 0.48);
+        sfx.play('warn');
+      }
+    } else if (e.specState === 1) {
+      // wind-up: rooted, thin guide lines show where the beams will be
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      const pulse = 0.3 + 0.3 * Math.abs(Math.sin(this.elapsed * 14));
+      for (let i = 0; i < e.beamN; i++) {
+        const a = e.beamAng + (i / e.beamN) * TAU;
+        this.addBeam(e.x, e.y, a, this.beamLength(e.x, e.y, a, e.radius), 3, color, pulse);
+      }
+      e.sprite.rotation = e.beamAng;
+      if (e.specT <= 0) {
+        e.specState = 2;
+        e.specT = 2.6;
+        this.shake(200, 0.004);
+        sfx.play('laser');
+      }
+    } else {
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      e.beamAng += e.beamSpin * dt;
+      for (let i = 0; i < e.beamN; i++) {
+        const a = e.beamAng + (i / e.beamN) * TAU;
+        const len = this.beamLength(e.x, e.y, a, e.radius);
+        this.addBeam(e.x, e.y, a, len, 16, color, 1);
+        // distance from the player to the beam segment
+        const rx = this.px - e.x;
+        const ry = this.py - e.y;
+        const along = rx * Math.cos(a) + ry * Math.sin(a);
+        const across = Math.abs(-rx * Math.sin(a) + ry * Math.cos(a));
+        if (along > 0 && along < len && across < PLAYER_R + 8) this.hurt(e.damage * 0.8);
+      }
+      e.sprite.rotation = e.beamAng;
+      if (e.specT <= 0) {
+        e.specState = 0;
+        e.specT = enraged ? 3 : 4;
+      }
+    }
+  }
+
+  /** How far a boss beam reaches before terrain stops it. */
+  private beamLength(x: number, y: number, ang: number, from: number, max = 1100) {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    for (let r = from; r < max; r += 18) {
+      if (this.obstacles.blocks(x + c * r, y + s * r)) return r;
+    }
+    return max;
   }
 
   private updateBullets(dt: number) {
@@ -769,14 +1049,28 @@ export class GameScene extends Phaser.Scene {
   damageEnemy(e: Enemy, raw: number, src: WeaponId | null, dx: number, dy: number, knock: number) {
     if (!e.alive) return;
     const dmg = raw * (0.9 + Math.random() * 0.2);
-    e.hp -= dmg;
+    e.lastHit = this.elapsed;
+    let shielded = false;
+    if (e.shield > 0) {
+      // the shield soaks damage first and pops with a ring once emptied
+      const soak = Math.min(e.shield, dmg);
+      e.shield -= soak;
+      e.hp -= dmg - soak;
+      shielded = true;
+      if (e.shield <= 0) {
+        this.addRing(e.x, e.y, e.radius * 2.4, AFFIXES.shield.color, 0.3);
+        this.burst(e.x, e.y, AFFIXES.shield.color, 10);
+      }
+    } else {
+      e.hp -= dmg;
+    }
     if (src) this.damageBy.set(src, (this.damageBy.get(src) ?? 0) + dmg);
     e.flash = 0.07;
     e.sprite.setTintFill(0xffffff);
     const kr = (1 - e.def.knockResist) * (e.elite ? 0.3 : 1);
     e.vx += dx * knock * kr;
     e.vy += dy * knock * kr;
-    if (this.showDamage) this.number(e.x, e.y - e.radius, dmg);
+    if (this.showDamage) this.number(e.x, e.y - e.radius, dmg, shielded ? '#7cd8ff' : '#ffffff');
     sfx.play('hit');
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -784,14 +1078,16 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(e: Enemy, silent = false) {
     e.alive = false;
     this.kills++;
-    const size = e.boss ? 60 : e.elite ? 24 : e.kind === 'brute' ? 12 : 6;
-    this.burst(e.x, e.y, e.elite ? COLORS.elite : e.def.color, size);
+    const size = e.boss ? 60 : e.elite ? 24 : e.champion || e.kind === 'brute' ? 12 : 6;
+    const bossColor = e.bossId ? BOSSES[e.bossId].color : COLORS.boss;
+    this.burst(e.x, e.y, e.elite ? COLORS.elite : e.boss ? bossColor : e.def.color, size);
     if (silent) return;
     sfx.play('kill');
 
     if (e.boss) {
       this.shake(500, 0.012);
-      this.addRing(e.x, e.y, 300, COLORS.boss, 0.8);
+      this.addRing(e.x, e.y, 300, bossColor, 0.8);
+      if (e.bossId) this.bossKinds.add(e.bossId);
       this.dropPickup('chest', e.x, e.y, 1);
       for (let i = 0; i < 16; i++) {
         const a = (i / 16) * TAU;
@@ -808,8 +1104,21 @@ export class GameScene extends Phaser.Scene {
     if (e.elite) {
       this.dropPickup('chest', e.x, e.y, 1);
       this.dropPickup('gem', e.x + 20, e.y, 20);
+      if (e.affixes.includes('split')) {
+        // three tougher copies (no affixes, no chest) scatter out of the corpse
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * TAU + Math.random();
+          const c = this.spawnEnemy(e.kind, e.x + Math.cos(a) * 24, e.y + Math.sin(a) * 24);
+          c.hp = c.maxHp = c.maxHp * 3;
+          c.xp *= 3;
+          c.vx = Math.cos(a) * 220;
+          c.vy = Math.sin(a) * 220;
+        }
+        this.addRing(e.x, e.y, 120, AFFIXES.split.color, 0.4);
+      }
       return;
     }
+    if (e.champion && Math.random() < 0.3) this.dropPickup('coin', e.x - 10, e.y, 3);
 
     this.dropPickup('gem', e.x, e.y, e.xp);
     if (e.def.behavior === 'splitter') {
@@ -1166,6 +1475,7 @@ export class GameScene extends Phaser.Scene {
       time: this.elapsed,
       boss1: this.boss1Killed,
       boss2: this.boss2Killed,
+      bosses: [...this.bossKinds],
       evolved: this.weapons.filter((w) => w.evolved).map((w) => w.id),
       maxedWeapons: this.weapons.filter((w) => w.level >= ITEMS[w.id].maxLevel).length,
       firstHurt: this.firstHurt,
@@ -1338,8 +1648,32 @@ export class GameScene extends Phaser.Scene {
     for (const b of this.bosses) {
       if (b.telegraph > 0) {
         const pulse = 0.35 + 0.35 * Math.sin(this.elapsed * 30);
-        g.lineStyle(10, COLORS.boss, 0.15 + pulse * 0.3);
+        g.lineStyle(10, b.bossId ? BOSSES[b.bossId].color : COLORS.boss, 0.15 + pulse * 0.3);
         g.lineBetween(b.x, b.y, b.x + b.dvx * 0.6, b.y + b.dvy * 0.6);
+      }
+    }
+    for (const e of this.affixed) {
+      if (!e.alive) {
+        e.label?.setVisible(false);
+        continue;
+      }
+      e.label?.setPosition(e.x, e.y - e.radius - 6);
+      if (e.champion) {
+        g.lineStyle(2, AFFIXES[e.affixes[0]].color, 0.45);
+        g.strokeCircle(e.x, e.y, e.radius + 4);
+      }
+      if (e.shield > 0) {
+        const k = e.shield / e.maxShield;
+        g.lineStyle(3, AFFIXES.shield.color, 0.25 + 0.55 * k);
+        g.strokeCircle(e.x, e.y, e.radius + 9);
+      }
+      if (e.blinkTele > 0) {
+        // where it will reappear
+        const pulse = 0.4 + 0.4 * Math.abs(Math.sin(this.elapsed * 18));
+        g.lineStyle(3, AFFIXES.blink.color, pulse);
+        g.strokeCircle(e.blinkX, e.blinkY, e.radius + 6);
+        g.fillStyle(AFFIXES.blink.color, pulse * 0.25);
+        g.fillCircle(e.blinkX, e.blinkY, e.radius + 6);
       }
     }
 

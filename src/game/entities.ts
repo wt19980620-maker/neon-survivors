@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { EnemyDef, EnemyKind } from './data';
+import type { AffixId, BossId, EnemyDef, EnemyKind } from './data';
 
 export interface Pooled {
   alive: boolean;
@@ -60,6 +60,22 @@ export class Enemy implements Pooled {
   elite = false;
   boss = false;
   finalBoss = false;
+  bossId: BossId | null = null;
+  /** ordinary enemy promoted with a single affix */
+  champion = false;
+  affixes: AffixId[] = [];
+  /** floating affix names, only while the enemy has affixes */
+  label: Phaser.GameObjects.Text | null = null;
+  shield = 0;
+  maxShield = 0;
+  /** game time of the last hit taken (shield refill / regen wait for a quiet moment) */
+  lastHit = 0;
+  /** affix timers: volley / summon share one, blink has its own plus a telegraph */
+  affixT = 0;
+  blinkT = 0;
+  blinkTele = 0;
+  blinkX = 0;
+  blinkY = 0;
   baseScale = 1;
   /** current movement direction (radians), used by enemies with a limited turn rate */
   heading = 0;
@@ -83,6 +99,14 @@ export class Enemy implements Pooled {
   dvx = 0;
   dvy = 0;
   shotRot = 0;
+  /** boss-specific state machine: phase counter, timer, beam angle / spin / count */
+  phase = 0;
+  specState = 0;
+  specT = 0;
+  spiralRot = 0;
+  beamAng = 0;
+  beamSpin = 0;
+  beamN = 0;
 
   constructor(public sprite: Phaser.GameObjects.Image) {}
 }

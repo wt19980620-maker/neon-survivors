@@ -17,6 +17,8 @@ export const COLORS = {
   bat: 0xffa94d,
   brute: 0xc05cff,
   boss: 0xff2e63,
+  hive: 0xffb13d,
+  prism: 0x6fb8ff,
   elite: 0xffd24d,
   gem1: 0x4dc3ff,
   gem2: 0x6bff8f,

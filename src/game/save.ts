@@ -1,4 +1,4 @@
-import type { CharId, GameMode, MapId, MetaId, WeaponId } from './data';
+import type { BossId, CharId, GameMode, MapId, MetaId, WeaponId } from './data';
 
 /** Lifetime totals, used by achievements. Only updated when a run ends. */
 export interface LifetimeStats {
@@ -12,6 +12,8 @@ export interface LifetimeStats {
   untouched: number;
   /** longest endless-mode survival, seconds */
   endlessBest: number;
+  /** every boss kind ever defeated */
+  bossKinds: BossId[];
 }
 
 export interface SaveData {
@@ -47,7 +49,7 @@ function defaults(): SaveData {
     gold: 0,
     meta: {},
     best: { time: 0, kills: 0, level: 0, wins: 0 },
-    stats: { kills: 0, runs: 0, boss1: 0, boss2: 0, evolved: [], winChars: [], bestMaxed: 0, untouched: 0, endlessBest: 0 },
+    stats: { kills: 0, runs: 0, boss1: 0, boss2: 0, evolved: [], winChars: [], bestMaxed: 0, untouched: 0, endlessBest: 0, bossKinds: [] },
     achievements: [],
     selectedChar: 'runner',
     muted: false,
@@ -87,6 +89,11 @@ export function loadSave(): SaveData {
       if (parsed.music === false && parsed.musicVolume === undefined) {
         data.musicVolume = 0;
         data.music = true;
+      }
+      if (parsed.stats && !parsed.stats.bossKinds) {
+        // saves from before the boss roster grew: the only bosses were the warden and the void lord
+        if (data.stats.boss1 > 0) data.stats.bossKinds.push('warden');
+        if (data.stats.boss2 > 0) data.stats.bossKinds.push('void');
       }
       if (!parsed.stats) {
         // pre-achievement save: infer what we can from the best records so progress isn't lost

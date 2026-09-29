@@ -347,9 +347,35 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     neon(ctx, COLORS.bomber, () => star(ctx, w / 2, h / 2, 13, 7, 8), { fill: 0.35, line: 2 });
     neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 3.5, 0, Math.PI * 2), { fill: 1, line: 1, blur: 8 });
   });
-  sprite(scene, 'ebullet', 20, 20, (ctx, w, h) => {
-    neon(ctx, COLORS.enemyBullet, () => ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2), { fill: 0.9, line: 2, blur: 8 });
+  sprite(scene, 'e_boss_hive', 128, 128, (ctx, w, h) => {
+    // honeycomb: a big cell with seven chambers
+    neon(ctx, COLORS.hive, () => poly(ctx, w / 2, h / 2, 48, 6, Math.PI / 6), { fill: 0.16, line: 4, blur: 18 });
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const r = i === 6 ? 0 : 22;
+      neon(ctx, COLORS.hive, () => poly(ctx, w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r, 11, 6, Math.PI / 6), { fill: i === 6 ? 0.6 : 0.3, line: 2, blur: 6 });
+    }
+    neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2), { fill: 1, line: 1, blur: 12 });
   });
+  sprite(scene, 'e_boss_prism', 128, 128, (ctx, w, h) => {
+    // two interlocked triangles around a faceted core
+    neon(ctx, COLORS.prism, () => poly(ctx, w / 2, h / 2, 50, 3, -Math.PI / 2), { fill: 0.14, line: 3.5, blur: 18 });
+    neon(ctx, COLORS.prism, () => poly(ctx, w / 2, h / 2, 50, 3, Math.PI / 2), { fill: 0.14, line: 3.5, blur: 18 });
+    neon(ctx, COLORS.prism, () => poly(ctx, w / 2, h / 2, 18, 6), { fill: 0.45, line: 2.5 });
+    neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 6, 0, Math.PI * 2), { fill: 1, line: 1, blur: 12 });
+  });
+  sprite(scene, 'e_egg', 36, 40, (ctx, w, h) => {
+    neon(ctx, COLORS.hive, () => ctx.ellipse(w / 2, h / 2, 12, 15, 0, 0, Math.PI * 2), { fill: 0.3, line: 2.5, blur: 10 });
+    neon(ctx, COLORS.hive, () => ctx.ellipse(w / 2, h / 2 + 2, 5, 6, 0, 0, Math.PI * 2), { fill: 0.7, line: 1.5, blur: 6 });
+  });
+  const bullet = (key: string, color: number) =>
+    sprite(scene, key, 20, 20, (ctx, w, h) => {
+      neon(ctx, color, () => ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2), { fill: 0.9, line: 2, blur: 8 });
+    });
+  bullet('ebullet', COLORS.enemyBullet);
+  bullet('ebullet_acid', 0xb8ff4d);
+  bullet('ebullet_void', 0xc79bff);
+  bullet('ebullet_prism', COLORS.prism);
 
   // --- weapons
   sprite(scene, 'bolt', 36, 20, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1));
