@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import {
-  CHAR_BY_ID, ENEMY_DEFS, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
-  type CharId, type EnemyKind, type ItemId, type PassiveId, type WeaponId,
+  CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
+  type CharId, type EnemyKind, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import {
-  checkAchievements, commitRun, isCharUnlocked, type AchievementDef, type RunSnapshot,
+  checkAchievements, commitRun, isCharUnlocked, isMapUnlocked, type AchievementDef, type RunSnapshot,
 } from '../game/achievements';
 import { COLORS, FONT } from '../game/palette';
 import { sfx } from '../game/audio';
@@ -16,6 +16,7 @@ import {
 } from '../game/entities';
 import { createWeapon, type Weapon } from '../game/weapons';
 import { Director } from '../game/director';
+import { ObstacleField } from '../game/obstacles';
 import { inputState } from '../game/input';
 import { res, vh, vibrate, vw } from '../ui/screen';
 import { texScale } from '../game/textures';
@@ -95,6 +96,10 @@ export class GameScene extends Phaser.Scene {
 
   // --- internals
   private director!: Director;
+  mapDef: MapDef = MAPS[0];
+  private obstacles!: ObstacleField;
+  private shakeScale = 1;
+  private showDamage = true;
   private grid = new SpatialGrid(64);
   private enemyPool!: Pool<Enemy>;
   private pickupPool!: Pool<Pickup>;
@@ -146,14 +151,19 @@ export class GameScene extends Phaser.Scene {
 
   // ================================================================ lifecycle
 
-  create(data?: { char?: CharId }) {
+  create(data?: { char?: CharId; map?: MapId }) {
     this.resetState();
+    const save = loadSave();
+    const wantedMap = data?.map ?? save.selectedMap;
+    this.mapDef = MAP_BY_ID[isMapUnlocked(wantedMap) ? wantedMap : 'grid'];
+    this.shakeScale = save.shake;
+    this.showDamage = save.damageNumbers;
     const wanted = data?.char ?? loadSave().selectedChar;
     this.charId = isCharUnlocked(wanted) ? wanted : 'runner';
     const char = CHAR_BY_ID[this.charId];
 
     const k = texScale();
-    this.bg = this.add.tileSprite(0, 0, 64, 64, 'grid').setOrigin(0).setDepth(-10).setTileScale(k);
+    this.bg = this.add.tileSprite(0, 0, 64, 64, `grid_${this.mapDef.id}`).setOrigin(0).setDepth(-10).setTileScale(k);
     this.aura = this.add.image(0, 0, 'glow').setDepth(29).setBlendMode(Phaser.BlendModes.ADD)
       .setTint(char.color).setAlpha(0.3).setScale(1.8 * k);
     this.playerSprite = this.add.image(0, 0, `player_${char.id}`).setDepth(30).setScale(k);
@@ -176,7 +186,8 @@ export class GameScene extends Phaser.Scene {
     }));
 
     const cam = this.cameras.main;
-    cam.setBackgroundColor(COLORS.bg);
+    cam.setBackgroundColor(this.mapDef.bg);
+    this.obstacles = new ObstacleField(this, this.mapDef);
     cam.startFollow(this.playerSprite, false, 0.14, 0.14);
     this.applyZoom();
     this.scale.on('resize', this.applyZoom, this);
@@ -264,6 +275,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') return;
 
     this.elapsed += dt;
+    this.obstacles.update(this.px, this.py, this.viewRadius());
     this.updatePlayer(dt);
 
     this.achTimer -= dt;
@@ -312,6 +324,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.px += mx * this.stats.speed * dt;
     this.py += my * this.stats.speed * dt;
+    const body = { x: this.px, y: this.py };
+    if (this.obstacles.resolve(body, PLAYER_R, mx, my, 0)) {
+      this.px = body.x;
+      this.py = body.y;
+    }
 
     this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.regen * dt);
     this.invuln = Math.max(0, this.invuln - dt);
@@ -331,7 +348,7 @@ export class GameScene extends Phaser.Scene {
     this.hp -= dmg;
     this.invuln = 0.45;
     if (this.firstHurt < 0) this.firstHurt = this.elapsed;
-    this.cameras.main.shake(120, 0.006);
+    this.shake(120, 0.006);
     this.ui()?.flashDamage();
     vibrate(dmg >= 15 ? 60 : 30);
     this.number(this.px, this.py - 20, dmg, '#ff5c7a');
@@ -368,7 +385,7 @@ export class GameScene extends Phaser.Scene {
       this.damageEnemy(e, e.boss ? e.maxHp * 0.05 : damage, null, dx / len, dy / len, 600);
     }
     this.addRing(this.px, this.py, radius, 0xffffff, 0.6);
-    this.cameras.main.shake(300, 0.01);
+    this.shake(300, 0.01);
   }
 
   // ================================================================ enemies
@@ -427,7 +444,7 @@ export class GameScene extends Phaser.Scene {
       scale = 1.5;
     }
     if (e.boss) {
-      hp = e.finalBoss ? 14000 : 3500;
+      hp = (e.finalBoss ? 14000 : 3500) * this.mapDef.hpMult;
       damage = e.finalBoss ? 32 : 24;
       speed = e.finalBoss ? 74 : 64;
       scale = e.finalBoss ? 1.3 : 1;
@@ -490,7 +507,7 @@ export class GameScene extends Phaser.Scene {
     const r = 80;
     this.addRing(e.x, e.y, r, COLORS.bomber, 0.4);
     this.burst(e.x, e.y, COLORS.bomber, 20);
-    this.cameras.main.shake(120, 0.004);
+    this.shake(120, 0.004);
     sfx.play('boom');
     if ((this.px - e.x) ** 2 + (this.py - e.y) ** 2 < (r + PLAYER_R) ** 2) this.hurt(e.damage);
     const hit: Enemy[] = [];
@@ -606,6 +623,8 @@ export class GameScene extends Phaser.Scene {
       }
       e.vx *= damp;
       e.vy *= damp;
+      // terrain: push out, sliding around the obstacle towards the player
+      this.obstacles.resolve(e, e.radius, dx / d, dy / d, e.speed * slowMul * dt * 0.8);
       e.sprite.setPosition(e.x, e.y);
 
       if (e.flash > 0) {
@@ -681,6 +700,12 @@ export class GameScene extends Phaser.Scene {
       b.y += b.vy * dt;
       b.life -= dt;
       b.sprite.setPosition(b.x, b.y);
+      if (this.obstacles.blocks(b.x, b.y)) {
+        // obstacles are cover from enemy fire
+        b.alive = false;
+        this.burst(b.x, b.y, COLORS.enemyBullet, 3);
+        continue;
+      }
       if (b.life <= 0) {
         b.alive = false;
         continue;
@@ -695,6 +720,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ================================================================ weapons API
+
+  /** Re-read live settings after they change in the pause menu. */
+  applySettings() {
+    const save = loadSave();
+    this.shakeScale = save.shake;
+    this.showDamage = save.damageNumbers;
+  }
+
+  /** Camera shake scaled by the player's setting (0 = off). */
+  shake(duration: number, intensity: number) {
+    if (this.shakeScale > 0) this.cameras.main.shake(duration, intensity * this.shakeScale);
+  }
 
   newSourceId() {
     return ++this.sourceIds;
@@ -726,7 +763,7 @@ export class GameScene extends Phaser.Scene {
     const kr = (1 - e.def.knockResist) * (e.elite ? 0.3 : 1);
     e.vx += dx * knock * kr;
     e.vy += dy * knock * kr;
-    this.number(e.x, e.y - e.radius, dmg);
+    if (this.showDamage) this.number(e.x, e.y - e.radius, dmg);
     sfx.play('hit');
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -740,7 +777,7 @@ export class GameScene extends Phaser.Scene {
     sfx.play('kill');
 
     if (e.boss) {
-      this.cameras.main.shake(500, 0.012);
+      this.shake(500, 0.012);
       this.addRing(e.x, e.y, 300, COLORS.boss, 0.8);
       this.dropPickup('chest', e.x, e.y, 1);
       for (let i = 0; i < 16; i++) {
@@ -953,7 +990,7 @@ export class GameScene extends Phaser.Scene {
     const evo = EVOLUTIONS[id];
     this.addRing(this.px, this.py, 380, evo.color, 0.9);
     this.burst(this.px, this.py, evo.color, 50);
-    this.cameras.main.shake(350, 0.01);
+    this.shake(350, 0.01);
     this.ui()?.banner(`进化！${evo.name}`, true, evo.color);
     sfx.play('victory');
   }
@@ -1134,7 +1171,7 @@ export class GameScene extends Phaser.Scene {
     const save = loadSave();
     const newBest = this.elapsed > save.best.time;
     const minutes = this.elapsed / 60;
-    const gold = Math.floor((this.coins + this.kills * 0.02 + minutes * 8 + (this.endWin ? 150 : 0)) * this.stats.greed);
+    const gold = Math.floor((this.coins + this.kills * 0.02 + minutes * 8 + (this.endWin ? 150 : 0)) * this.stats.greed * this.mapDef.goldMult);
     this.pollAchievements(true);
     commitRun(this.snapshot(true));
     save.gold += gold;

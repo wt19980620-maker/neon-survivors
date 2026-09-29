@@ -1,4 +1,4 @@
-import type { CharId, MetaId, WeaponId } from './data';
+import type { CharId, MapId, MetaId, WeaponId } from './data';
 
 /** Lifetime totals, used by achievements. Only updated when a run ends. */
 export interface LifetimeStats {
@@ -23,6 +23,12 @@ export interface SaveData {
   music: boolean;
   /** 'high' renders at up to 2.5× pixel density, 'smooth' caps it at 1.5× for weaker phones */
   quality: 'high' | 'smooth';
+  sfxVolume: number;
+  musicVolume: number;
+  /** camera shake strength: 1 full, 0.5 weak, 0 off */
+  shake: number;
+  damageNumbers: boolean;
+  selectedMap: MapId;
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -38,6 +44,11 @@ function defaults(): SaveData {
     muted: false,
     music: true,
     quality: 'high',
+    sfxVolume: 1,
+    musicVolume: 1,
+    shake: 1,
+    damageNumbers: true,
+    selectedMap: 'grid',
   };
 }
 
@@ -59,6 +70,11 @@ export function loadSave(): SaveData {
         meta: { ...(parsed.meta ?? {}) },
         achievements: [...(parsed.achievements ?? [])],
       };
+      // the on/off music toggle became a volume setting
+      if (parsed.music === false && parsed.musicVolume === undefined) {
+        data.musicVolume = 0;
+        data.music = true;
+      }
       if (!parsed.stats) {
         // pre-achievement save: infer what we can from the best records so progress isn't lost
         const b = data.best;

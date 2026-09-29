@@ -31,7 +31,7 @@ export class Director {
   /** Enemy stat multipliers grow with time so the pressure keeps pace with the build. */
   hpMult(t = this.g.elapsed) {
     const m = t / 60;
-    return 1 + m * 0.3 + m * m * 0.035;
+    return (1 + m * 0.3 + m * m * 0.035) * this.g.mapDef.hpMult;
   }
 
   dmgMult(t = this.g.elapsed) {
@@ -39,7 +39,7 @@ export class Director {
   }
 
   speedMult(t = this.g.elapsed) {
-    return 1 + (t / RUN_LENGTH) * 0.1;
+    return (1 + (t / RUN_LENGTH) * 0.1) * this.g.mapDef.speedMult;
   }
 
   update(dt: number) {
@@ -138,6 +138,6 @@ export class Director {
     g.spawnEnemy('boss', p.x, p.y, { boss: true, final });
     g.ui()?.banner(final ? '最终首领 · 虚空之主' : '首领来袭 · 猩红守望者', true);
     sfx.play('boss');
-    g.cameras.main.shake(400, 0.006);
+    g.shake(400, 0.006);
   }
 }

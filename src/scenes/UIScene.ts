@@ -6,8 +6,9 @@ import { music } from '../game/music';
 import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
+import { buildSettings } from '../ui/settings';
 import { canSplit, fitCamera, isShort, res, safeArea, vh, vw, type Insets } from '../ui/screen';
-import { charUnlockedBy, type AchievementDef } from '../game/achievements';
+import { unlockLabel, type AchievementDef } from '../game/achievements';
 import type { GameScene, RunResult, UpgradeOption } from './GameScene';
 
 type ModalKind = 'level' | 'pause' | 'result';
@@ -204,9 +205,9 @@ export class UIScene extends Phaser.Scene {
     }
     this.toastBusy = true;
     const w = vw(this);
-    const tw = Math.min(290, w - 24);
+    const tw = Math.min(320, w - 24);
     const th = 64;
-    const unlock = charUnlockedBy(a.id);
+    const unlock = unlockLabel(a.id);
     const x = w - 12 - this.ins.right - tw / 2;
     // on phones the item icons sit under the top-right corner, so drop below them
     const y = (w < 600 ? 150 : 96) + this.ins.top;
@@ -215,7 +216,7 @@ export class UIScene extends Phaser.Scene {
     c.add(this.add.image(-tw / 2 + 32, 0, 'icon_trophy').setDisplaySize(42, 42));
     c.add(this.add.text(-tw / 2 + 62, -th / 2 + 8, '成就达成', style(11, COLORS.dim)));
     c.add(glowText(this.add.text(-tw / 2 + 62, -th / 2 + 22, a.name, style(17, COLORS.elite, true)), COLORS.elite, 6));
-    const reward = unlock ? `+${a.gold} 金 · 解锁角色「${unlock.name}」` : `+${a.gold} 金`;
+    const reward = unlock ? `+${a.gold} 金 · 解锁 ${unlock.text}` : `+${a.gold} 金`;
     c.add(this.add.text(-tw / 2 + 62, th / 2 - 8, reward, style(12, unlock ? unlock.color : COLORS.coin)).setOrigin(0, 1));
     sfx.play('chest');
     this.tweens.add({ targets: c, x, duration: 320, ease: 'Cubic.Out' });
@@ -544,35 +545,40 @@ export class UIScene extends Phaser.Scene {
       const statsY = split ? recipeTop + 22 + WEAPON_IDS.length * recipeRow + 20 : top + ph - 150;
       c.add(this.add.text(split ? rightCx : leftCx, statsY, line, { ...style(split ? 12 : 13, COLORS.dim), align: 'center', lineSpacing: 6 }).setOrigin(0.5));
 
-      const muted = loadSave().muted;
-      // split: one row of four buttons along the bottom edge; otherwise continue + a row of three
-      const bw = split ? Math.min(150, (pw - 60) / 4) : Math.min(140, (colW - 50) / 3);
-      const gap = bw + 10;
+      // split: one row of three buttons along the bottom edge; otherwise continue above a row of two
       const by = top + ph - (split ? 30 : 44);
-      const bx = split ? w / 2 + gap / 2 : leftCx;
-      if (split) c.add(makeButton(this, w / 2 - gap * 1.5, by, bw, 36, '继续游戏', () => this.primary?.(), COLORS.player, 15));
-      else c.add(makeButton(this, leftCx, top + ph - 96, 200, 40, '继续游戏', () => this.primary?.(), COLORS.player));
-      c.add(makeButton(this, bx - gap, by, bw, 36, muted ? '声音：关' : '声音：开', () => {
-        const save = loadSave();
-        save.muted = !save.muted;
-        sfx.setMuted(save.muted);
-        music.applyVolume();
-        writeSave();
-        this.rebuildModal?.();
-      }, COLORS.dim, 15));
-      c.add(makeButton(this, bx, by, bw, 36, loadSave().music ? '音乐：开' : '音乐：关', () => {
-        const save = loadSave();
-        save.music = !save.music;
-        music.setEnabled(save.music);
-        writeSave();
-        this.rebuildModal?.();
-      }, COLORS.dim, 15));
-      c.add(makeButton(this, bx + gap, by, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+      if (split) {
+        const bw = Math.min(160, (pw - 60) / 3);
+        const gap = bw + 10;
+        c.add(makeButton(this, w / 2 - gap, by, bw, 36, '继续游戏', () => this.primary?.(), COLORS.player, 15));
+        c.add(makeButton(this, w / 2, by, bw, 36, '设置', () => this.showSettings(), COLORS.dim, 15));
+        c.add(makeButton(this, w / 2 + gap, by, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+      } else {
+        const bw = Math.min(150, (colW - 50) / 2);
+        c.add(makeButton(this, leftCx, top + ph - 96, 200, 40, '继续游戏', () => this.primary?.(), COLORS.player));
+        c.add(makeButton(this, leftCx - bw / 2 - 6, by, bw, 36, '设置', () => this.showSettings(), COLORS.dim, 15));
+        c.add(makeButton(this, leftCx + bw / 2 + 6, by, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+      }
     });
     this.primary = () => {
       this.closeModal();
       this.gs.resumeFromPause();
     };
+  }
+
+  /** Settings from the pause menu; closing returns to the pause screen. */
+  private showSettings() {
+    this.openModal('pause', (c, w, h) => {
+      buildSettings(this, c, w, h, {
+        allowQuality: false,
+        onChange: () => {
+          this.gs.applySettings();
+          this.rebuildModal?.();
+        },
+        onClose: () => this.showPause(),
+      });
+    });
+    this.primary = () => this.showPause();
   }
 
   showResult(r: RunResult) {
@@ -611,8 +617,8 @@ export class UIScene extends Phaser.Scene {
       let achH = 0;
       if (r.achievements.length) {
         const names = r.achievements.map((a) => {
-          const unlock = charUnlockedBy(a.id);
-          return unlock ? `${a.name}（解锁${unlock.name}）` : a.name;
+          const unlock = unlockLabel(a.id);
+          return unlock ? `${a.name}（解锁${unlock.text}）` : a.name;
         });
         const t = this.add.text(leftX, statsTop + 4 * statRow + 8, `★ 新成就：${names.join('、')}`, {
           ...style(split ? 13 : 14, COLORS.elite, true), wordWrap: { width: leftR - leftX, useAdvancedWrap: true },
@@ -654,9 +660,10 @@ export class UIScene extends Phaser.Scene {
 
   private retry() {
     const char = this.gs.charId;
+    const map = this.gs.mapDef.id;
     this.closeModal();
     this.scene.stop('Game');
-    this.scene.start('Game', { char });
+    this.scene.start('Game', { char, map });
   }
 
   private toMenu() {

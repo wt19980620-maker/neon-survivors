@@ -50,6 +50,14 @@ class Music {
     this.applyVolume();
   }
 
+  /** 0..1 user volume */
+  volume = 1;
+
+  setVolume(v: number) {
+    this.volume = v;
+    this.applyVolume();
+  }
+
   setEnabled(on: boolean) {
     this.enabled = on;
     this.applyVolume();
@@ -68,7 +76,7 @@ class Music {
   applyVolume() {
     const ctx = sfx.context;
     if (!ctx || !this.out) return;
-    const v = this.enabled && !sfx.muted ? 0.22 * this.duck : 0;
+    const v = this.enabled && !sfx.muted ? 0.22 * this.duck * this.volume : 0;
     this.out.gain.setTargetAtTime(v, ctx.currentTime, 0.15);
   }
 

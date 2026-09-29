@@ -10,6 +10,8 @@ import { res, updateRes } from './ui/screen';
 
 sfx.setMuted(loadSave().muted);
 music.setEnabled(loadSave().music);
+sfx.setVolume(loadSave().sfxVolume);
+music.setVolume(loadSave().musicVolume);
 
 // Browsers only allow audio after a user gesture.
 const unlock = () => {

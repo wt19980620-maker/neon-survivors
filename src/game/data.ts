@@ -336,6 +336,49 @@ export const CHARACTERS: CharDef[] = [
 
 export const CHAR_BY_ID = Object.fromEntries(CHARACTERS.map((c) => [c.id, c])) as Record<CharId, CharDef>;
 
+// ---------------------------------------------------------------- maps
+
+export type MapId = 'grid' | 'crystal' | 'abyss';
+
+export interface MapDef {
+  id: MapId;
+  name: string;
+  desc: string;
+  bg: number;
+  grid: number;
+  /** obstacle colour */
+  accent: number;
+  obstacle: 'pillar' | 'crystal' | 'ruin';
+  /** average obstacles per 480×480 chunk */
+  density: number;
+  radius: [number, number];
+  hpMult: number;
+  speedMult: number;
+  goldMult: number;
+  /** achievement that unlocks this map; none = available from the start */
+  unlock?: string;
+}
+
+export const MAPS: MapDef[] = [
+  {
+    id: 'grid', name: '霓虹网格', desc: '开阔的训练场，零星的能量柱',
+    bg: 0x07060f, grid: 0x1c1838, accent: 0x5ef2ff, obstacle: 'pillar', density: 0.7, radius: [26, 40],
+    hpMult: 1, speedMult: 1, goldMult: 1,
+  },
+  {
+    id: 'crystal', name: '晶簇洞窟', desc: '晶簇林立如迷宫，利用地形卡位',
+    bg: 0x0b0716, grid: 0x2a1a44, accent: 0xa9c8ff, obstacle: 'crystal', density: 2.2, radius: [28, 52],
+    hpMult: 1.2, speedMult: 1, goldMult: 1.3, unlock: 'boss1',
+  },
+  {
+    id: 'abyss', name: '深渊回廊', desc: '巨大的废墟，敌人更凶猛',
+    bg: 0x0e0508, grid: 0x3a1420, accent: 0xff5a36, obstacle: 'ruin', density: 1.1, radius: [48, 80],
+    hpMult: 1.45, speedMult: 1.1, goldMult: 1.6, unlock: 'win',
+  },
+];
+
+export const MAP_BY_ID = Object.fromEntries(MAPS.map((m) => [m.id, m])) as Record<MapId, MapDef>;
+
 /** Human-readable stat lines for a character card. */
 export function charModLines(m: CharMods): string[] {
   const pct = (v: number) => `${v > 1 ? '+' : ''}${Math.round((v - 1) * 100)}%`;

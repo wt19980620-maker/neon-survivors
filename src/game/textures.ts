@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS, FONT, hex } from './palette';
-import { CHARACTERS, EVOLUTIONS, type CharId } from './data';
+import { CHARACTERS, EVOLUTIONS, MAPS, type CharId } from './data';
 
 type Draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
 
@@ -171,6 +171,63 @@ const shapes = {
     }, { fill: 0.6, line: 2 });
   },
 };
+
+/** Solid body (so it reads as terrain, not an effect) with a neon outline. Fits a radius-48 circle. */
+function drawObstacle(ctx: CanvasRenderingContext2D, cx: number, cy: number, kind: 'pillar' | 'crystal' | 'ruin', color: number, bg: number) {
+  // enemies are outlines only; a filled, tinted body makes terrain read as solid at a glance
+  const body = (path: () => void) => {
+    ctx.save();
+    ctx.beginPath();
+    path();
+    ctx.fillStyle = hex(bg);
+    ctx.globalAlpha = 0.95;
+    ctx.fill();
+    const grad = ctx.createRadialGradient(cx - 14, cy - 18, 4, cx, cy, 52);
+    grad.addColorStop(0, hex(color));
+    grad.addColorStop(1, hex(bg));
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = 0.38;
+    ctx.fill();
+    ctx.restore();
+    neon(ctx, color, path, { fill: 0.06, line: 4, blur: 16 });
+  };
+  if (kind === 'pillar') {
+    body(() => ctx.arc(cx, cy, 44, 0, Math.PI * 2));
+    neon(ctx, color, () => ctx.arc(cx, cy, 28, 0, Math.PI * 2), { fill: 0.08, line: 2, blur: 8 });
+    neon(ctx, color, () => ctx.arc(cx, cy, 8, 0, Math.PI * 2), { fill: 0.6, line: 1.5, blur: 10 });
+  } else if (kind === 'crystal') {
+    // shards radiating from a solid base, filling the collision circle so there are no invisible walls
+    const shards: [number, number, number, number][] = [
+      [0, 0, 46, 0], [0, 0, 42, 1.25], [0, 0, 44, 2.5], [0, 0, 40, 3.8], [0, 0, 43, 5.05],
+    ];
+    body(() => poly(ctx, cx, cy, 30, 6, Math.PI / 6));
+    for (const [dx, dy, len, rot] of shards) {
+      body(() => {
+        const x = cx + dx, y = cy + dy;
+        const c = Math.cos(rot), s = Math.sin(rot);
+        const pts: [number, number][] = [[0, -len], [len * 0.42, -len * 0.38], [len * 0.3, 0], [-len * 0.3, 0], [-len * 0.42, -len * 0.38]];
+        pts.forEach(([px, py], i) => {
+          const X = x + px * c - py * s;
+          const Y = y + px * s + py * c;
+          if (i === 0) ctx.moveTo(X, Y);
+          else ctx.lineTo(X, Y);
+        });
+        ctx.closePath();
+      });
+    }
+  } else {
+    body(() => poly(ctx, cx, cy, 45, 8, Math.PI / 8));
+    neon(ctx, color, () => {
+      // cracks
+      ctx.moveTo(cx - 30, cy - 12);
+      ctx.lineTo(cx - 8, cy - 2);
+      ctx.lineTo(cx + 4, cy - 22);
+      ctx.moveTo(cx + 12, cy + 30);
+      ctx.lineTo(cx + 2, cy + 8);
+      ctx.lineTo(cx + 26, cy + 2);
+    }, { fill: 0, line: 2, blur: 6 });
+  }
+}
 
 function iconFrame(ctx: CanvasRenderingContext2D, w: number, h: number, color: number) {
   ctx.save();
@@ -379,6 +436,26 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     ctx.fillStyle = 'rgba(94,242,255,0.18)';
     ctx.fillRect(0, 0, 2, 2);
   });
+
+  // --- per-map floor tiles and obstacles (drawn at radius 48; sprites scale to the real radius)
+  for (const m of MAPS) {
+    make(scene, `grid_${m.id}`, 64, 64, (ctx, w, h) => {
+      ctx.fillStyle = hex(m.bg);
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = hex(m.grid);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0.5, 0);
+      ctx.lineTo(0.5, h);
+      ctx.moveTo(0, 0.5);
+      ctx.lineTo(w, 0.5);
+      ctx.stroke();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = hex(m.accent);
+      ctx.fillRect(0, 0, 2, 2);
+    });
+    sprite(scene, `ob_${m.id}`, 96, 96, (ctx, w, h) => drawObstacle(ctx, w / 2, h / 2, m.obstacle, m.accent, m.bg));
+  }
 
   // --- UI icons
   const weaponIcon = (key: string, color: number, paint: (ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) => void) =>

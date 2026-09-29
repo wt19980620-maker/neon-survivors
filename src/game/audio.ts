@@ -37,7 +37,7 @@ class Sfx {
         const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.ctx = new Ctx();
         this.master = this.ctx.createGain();
-        this.master.gain.value = this.muted ? 0 : 0.32;
+        this.master.gain.value = this.level();
         this.master.connect(this.ctx.destination);
         const len = this.ctx.sampleRate * 0.5;
         this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -50,9 +50,21 @@ class Sfx {
     }
   }
 
+  /** 0..1 user volume on top of the mix level */
+  volume = 1;
+
+  private level() {
+    return this.muted ? 0 : 0.32 * this.volume;
+  }
+
+  setVolume(v: number) {
+    this.volume = v;
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.02);
+  }
+
   setMuted(m: boolean) {
     this.muted = m;
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.32, this.ctx.currentTime, 0.02);
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.02);
   }
 
   private tone(freq: number, dur: number, type: OscillatorType, vol: number, slideTo?: number, delay = 0) {

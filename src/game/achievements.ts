@@ -1,4 +1,4 @@
-import { CHARACTERS, type CharId, type WeaponId } from './data';
+import { CHARACTERS, MAPS, type CharId, type MapId, type WeaponId } from './data';
 import { loadSave, writeSave, type LifetimeStats, type SaveData } from './save';
 
 /** What happened in the current (or just-finished) run. */
@@ -95,6 +95,25 @@ export function isDone(id: string) {
 export function isCharUnlocked(id: CharId) {
   const c = CHARACTERS.find((x) => x.id === id)!;
   return !c.unlock || isDone(c.unlock);
+}
+
+export function isMapUnlocked(id: MapId) {
+  const m = MAPS.find((x) => x.id === id)!;
+  return !m.unlock || isDone(m.unlock);
+}
+
+/** Map unlocked by an achievement. */
+export function mapUnlockedBy(achId: string) {
+  return MAPS.find((m) => m.unlock === achId);
+}
+
+/** Everything an achievement unlocks, as display text, e.g. "重甲守卫、晶簇洞窟". */
+export function unlockLabel(achId: string): { text: string; color: number } | null {
+  const c = charUnlockedBy(achId);
+  const m = mapUnlockedBy(achId);
+  const names = [c?.name, m?.name].filter(Boolean);
+  if (!names.length) return null;
+  return { text: names.join('、'), color: c?.color ?? m!.accent };
 }
 
 /** Characters unlocked by an achievement. */

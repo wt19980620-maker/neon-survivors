@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
-import { CHARACTERS, ITEMS, META_DEFS, charModLines, metaCost, type CharId } from '../game/data';
+import { CHARACTERS, ITEMS, MAPS, META_DEFS, charModLines, metaCost, type CharId } from '../game/data';
+import { buildSettings } from '../ui/settings';
 import { COLORS } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
 import { loadSave, writeSave } from '../game/save';
 import {
-  ACHIEVEMENTS, ACHIEVEMENT_BY_ID, charUnlockedBy, checkAchievements, isCharUnlocked, isDone,
+  ACHIEVEMENTS, ACHIEVEMENT_BY_ID, checkAchievements, unlockLabel, isCharUnlocked, isDone, isMapUnlocked,
 } from '../game/achievements';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
 import { canSplit, fitCamera, isShort, isTouch, safeArea, vh, vw } from '../ui/screen';
@@ -18,7 +19,7 @@ interface Drifter {
   spin: number;
 }
 
-type OverlayKind = 'shop' | 'chars' | 'achievements';
+type OverlayKind = 'shop' | 'chars' | 'achievements' | 'settings';
 
 export class MenuScene extends Phaser.Scene {
   private bg!: Phaser.GameObjects.TileSprite;
@@ -27,6 +28,7 @@ export class MenuScene extends Phaser.Scene {
   private overlay: Phaser.GameObjects.Container | null = null;
   private overlayKind: OverlayKind | null = null;
   private achPage = 0;
+  private mapIndex = 0;
   private notice = '';
 
   constructor() {
@@ -38,6 +40,7 @@ export class MenuScene extends Phaser.Scene {
     this.overlay = null;
     this.overlayKind = null;
     this.achPage = 0;
+    this.mapIndex = Math.max(0, MAPS.findIndex((m) => m.id === loadSave().selectedMap));
     fitCamera(this);
     this.bg = this.add.tileSprite(0, 0, vw(this), vh(this), 'grid').setOrigin(0).setTileScale(texScale());
     const kinds = ['e_chaser', 'e_bat', 'e_brute', 'gem1', 'gem2', 'blade', 'disc'];
@@ -116,13 +119,13 @@ export class MenuScene extends Phaser.Scene {
       c.add(makeButton(this, w / 2, by, 240, 48, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 22));
       c.add(makeButton(this, w / 2 - 86, by + 56, 164, 40, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 17));
       c.add(makeButton(this, w / 2 + 86, by + 56, 164, 40, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 17));
-      this.settingsRow(c, w / 2, by + 104, 34, 14);
+      c.add(makeButton(this, w / 2, by + 104, 164, 34, '设置', () => this.openOverlay('settings'), COLORS.dim, 16));
     } else {
       by = h * 0.5;
       c.add(makeButton(this, w / 2, by, 240, 54, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 24));
       c.add(makeButton(this, w / 2, by + 66, 240, 44, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 19));
       c.add(makeButton(this, w / 2, by + 120, 240, 44, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 19));
-      this.settingsRow(c, w / 2, by + 170, 36, 15);
+      c.add(makeButton(this, w / 2, by + 170, 240, 38, '设置', () => this.openOverlay('settings'), COLORS.dim, 17));
     }
 
     c.add(glowText(this.add.text(w - 20 - ins.right, 18 + ins.top, `金币 ${save.gold}`, style(20, COLORS.coin, true)).setOrigin(1, 0), COLORS.coin, 8));
@@ -153,24 +156,6 @@ export class MenuScene extends Phaser.Scene {
     }).setOrigin(0.5));
   }
 
-  /** Sound / music / quality toggles, three abreast. */
-  private settingsRow(c: Phaser.GameObjects.Container, cx: number, y: number, bh: number, size: number) {
-    const save = loadSave();
-    const bw = 96;
-    const gap = bw + 6;
-    c.add(makeButton(this, cx - gap, y, bw, bh, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, size));
-    c.add(makeButton(this, cx, y, bw, bh, save.music ? '音乐：开' : '音乐：关', () => this.toggleMusic(), COLORS.dim, size));
-    c.add(makeButton(this, cx + gap, y, bw, bh, save.quality === 'smooth' ? '画质：流畅' : '画质：高清', () => this.toggleQuality(), COLORS.dim, size));
-  }
-
-  /** Render density is fixed at boot (textures are baked for it), so apply by reloading. */
-  private toggleQuality() {
-    const save = loadSave();
-    save.quality = save.quality === 'smooth' ? 'high' : 'smooth';
-    writeSave();
-    window.location.reload();
-  }
-
   private toggleMute() {
     const save = loadSave();
     save.muted = !save.muted;
@@ -180,21 +165,40 @@ export class MenuScene extends Phaser.Scene {
     this.buildMain();
   }
 
-  private toggleMusic() {
+  private startGame() {
     const save = loadSave();
-    save.music = !save.music;
+    const char = save.selectedChar;
+    const map = MAPS[this.mapIndex]?.id ?? save.selectedMap;
+    if (!isCharUnlocked(char) || !isMapUnlocked(map)) return;
     sfx.unlock();
-    music.start();
-    music.setEnabled(save.music);
-    writeSave();
-    this.buildMain();
+    this.scene.start('Game', { char, map });
   }
 
-  private startGame() {
-    const char = loadSave().selectedChar;
-    if (!isCharUnlocked(char)) return;
-    sfx.unlock();
-    this.scene.start('Game', { char });
+  /** Browse maps (locked ones too, so players can see what to unlock). */
+  private cycleMap(dir: number) {
+    this.mapIndex = (this.mapIndex + dir + MAPS.length) % MAPS.length;
+    const m = MAPS[this.mapIndex];
+    if (isMapUnlocked(m.id)) {
+      loadSave().selectedMap = m.id;
+      writeSave();
+    }
+    sfx.play('select');
+    this.openOverlay('chars');
+  }
+
+  private mapSelector(c: Phaser.GameObjects.Container, x: number, y: number, mw: number, bh: number) {
+    const m = MAPS[this.mapIndex];
+    const unlocked = isMapUnlocked(m.id);
+    c.add(this.add.rectangle(x, y, mw, bh, COLORS.panel, 0.96).setStrokeStyle(2, unlocked ? m.accent : COLORS.panelEdge, 1));
+    c.add(makeButton(this, x - mw / 2 + 20, y, 36, bh - 8, '‹', () => this.cycleMap(-1), COLORS.dim, 20));
+    c.add(makeButton(this, x + mw / 2 - 20, y, 36, bh - 8, '›', () => this.cycleMap(1), COLORS.dim, 20));
+    c.add(this.add.text(x, y - 9, `地图：${m.name}`, style(15, unlocked ? m.accent : COLORS.dim, true)).setOrigin(0.5));
+    const pct = (v: number) => Math.round((v - 1) * 100);
+    const mods = [m.hpMult > 1 ? `敌人血量 +${pct(m.hpMult)}%` : '', m.speedMult > 1 ? `移速 +${pct(m.speedMult)}%` : '', m.goldMult > 1 ? `金币 ×${m.goldMult}` : ''].filter(Boolean).join(' · ') || m.desc;
+    const unlockAch = m.unlock ? ACHIEVEMENT_BY_ID[m.unlock] : null;
+    const sub = unlocked ? mods : `解锁：${unlockAch?.desc ?? ''}`;
+    c.add(this.add.text(x, y + 10, sub, style(11, unlocked ? COLORS.dim : COLORS.elite)).setOrigin(0.5));
+    return unlocked;
   }
 
   // ================================================================ overlays
@@ -217,7 +221,14 @@ export class MenuScene extends Phaser.Scene {
     this.main.setVisible(false);
     if (kind === 'shop') this.buildShop(c, w, h);
     else if (kind === 'chars') this.buildChars(c, w, h);
-    else this.buildAchievements(c, w, h);
+    else if (kind === 'achievements') this.buildAchievements(c, w, h);
+    else {
+      buildSettings(this, c, w, h, {
+        allowQuality: true,
+        onChange: () => this.openOverlay('settings'),
+        onClose: () => this.closeOverlay(),
+      });
+    }
   }
 
   // ---------------------------------------------------------------- characters
@@ -249,6 +260,9 @@ export class MenuScene extends Phaser.Scene {
     if (!short) c.add(this.add.text(w / 2, titleY + (wide ? 36 : 28), wide && !isTouch() ? '点击选择 · ←/→ 切换 · Enter 出发' : '点击选择角色', style(13, COLORS.dim)).setOrigin(0.5));
     const btnY = short ? h - ins.bottom - 30 : wide ? Math.min(h - 50, titleY + 70 + 320 + 56) : h - ins.bottom - 44;
     const cardsTop = titleY + (short ? 26 : wide ? 70 : 58);
+    // map picker sits between the buttons when there's room, otherwise on its own row above them
+    const inlineMap = w >= 560;
+    const cardsBottom = inlineMap ? btnY : btnY - 58;
 
     const n = CHARACTERS.length;
     CHARACTERS.forEach((ch, i) => {
@@ -258,12 +272,12 @@ export class MenuScene extends Phaser.Scene {
       if (wide) {
         const gap = 14;
         cw = Math.min(200, (w - 60 - ins.left - ins.right - gap * (n - 1)) / n);
-        chh = Math.min(320, btnY - 34 - cardsTop);
+        chh = Math.min(320, cardsBottom - 34 - cardsTop);
         x = w / 2 - ((n - 1) * (cw + gap)) / 2 + i * (cw + gap);
         y = cardsTop + chh / 2;
       } else {
         cw = Math.min(460, w - 24);
-        chh = Math.min(96, (btnY - 34 - cardsTop) / n - 8);
+        chh = Math.min(96, (cardsBottom - 34 - cardsTop) / n - 8);
         x = w / 2;
         y = cardsTop + chh / 2 + i * (chh + 8);
       }
@@ -320,8 +334,26 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const cur = CHARACTERS.find((ch) => ch.id === save.selectedChar)!;
-    c.add(makeButton(this, w / 2 - 96, btnY, 170, short ? 42 : 48, '返回', () => this.closeOverlay(), COLORS.dim, 18));
-    c.add(makeButton(this, w / 2 + 96, btnY, 170, short ? 42 : 48, `出发 · ${cur.name}`, () => this.startGame(), cur.color, 18));
+    const bh = short ? 42 : 48;
+    let back: number, go: number, bw: number;
+    let mapOk: boolean;
+    if (inlineMap) {
+      const x0 = w / 2 - 267;
+      back = x0 + 55;
+      go = x0 + 449;
+      bw = 170;
+      mapOk = this.mapSelector(c, x0 + 237, btnY, 230, bh);
+      c.add(makeButton(this, back, btnY, 110, bh, '返回', () => this.closeOverlay(), COLORS.dim, 18));
+    } else {
+      mapOk = this.mapSelector(c, w / 2, btnY - 58, Math.min(340, w - 24), bh);
+      back = w / 2 - 82;
+      go = w / 2 + 82;
+      bw = 150;
+      c.add(makeButton(this, back, btnY, bw, bh, '返回', () => this.closeOverlay(), COLORS.dim, 18));
+    }
+    const goBtn = makeButton(this, go, btnY, bw, bh, `出发 · ${cur.name}`, () => this.startGame(), cur.color, 17);
+    goBtn.setEnabled(mapOk);
+    c.add(goBtn);
   }
 
   // ---------------------------------------------------------------- achievements
@@ -351,17 +383,18 @@ export class MenuScene extends Phaser.Scene {
     ACHIEVEMENTS.slice(this.achPage * perPage, (this.achPage + 1) * perPage).forEach((a, i) => {
       const y = top + headerH + i * rowH + rowH / 2;
       const done = isDone(a.id);
-      const unlock = charUnlockedBy(a.id);
+      const unlock = unlockLabel(a.id);
       const cur = Math.min(a.target, a.value(save, null));
       // right column (reward, progress) has a fixed width; the description wraps to whatever is left
       const bw = Math.min(140, pw * 0.25);
       c.add(this.add.image(left + 20, y, done ? 'icon_trophy' : 'icon_trophy_off').setDisplaySize(38, 38));
       c.add(this.add.text(left + 48, y - 16, a.name, style(16, done ? COLORS.elite : COLORS.text, true)));
-      c.add(this.add.text(left + 48, y + 4, a.desc, {
+      // unlock rewards ride along with the description so the reward column stays narrow on phones
+      const desc = unlock ? `${a.desc} · 解锁 ${unlock.text}` : a.desc;
+      c.add(this.add.text(left + 48, y + 4, desc, {
         ...style(12, COLORS.dim), wordWrap: { width: right - bw - 16 - (left + 48), useAdvancedWrap: true },
       }));
-      const reward = unlock ? `+${a.gold} 金 · 解锁${unlock.name}` : `+${a.gold} 金`;
-      c.add(this.add.text(right, y - 16, reward, style(12, unlock ? unlock.color : COLORS.coin)).setOrigin(1, 0));
+      c.add(this.add.text(right, y - 16, `+${a.gold} 金`, style(12, COLORS.coin)).setOrigin(1, 0));
       if (done) {
         c.add(this.add.text(right, y + 3, '✓ 已完成', style(12, COLORS.elite, true)).setOrigin(1, 0));
       } else {
