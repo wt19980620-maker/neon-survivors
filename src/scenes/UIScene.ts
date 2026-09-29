@@ -562,12 +562,12 @@ export class UIScene extends Phaser.Scene {
         const gap = bw + 10;
         c.add(makeButton(this, w / 2 - gap, by, bw, 36, '继续游戏', () => this.primary?.(), COLORS.player, 15));
         c.add(makeButton(this, w / 2, by, bw, 36, '设置', () => this.showSettings(), COLORS.dim, 15));
-        c.add(makeButton(this, w / 2 + gap, by, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+        c.add(makeButton(this, w / 2 + gap, by, bw, 36, '结束游戏', () => this.endRun(), COLORS.hp, 15));
       } else {
         const bw = Math.min(150, (colW - 50) / 2);
         c.add(makeButton(this, leftCx, top + ph - 96, 200, 40, '继续游戏', () => this.primary?.(), COLORS.player));
         c.add(makeButton(this, leftCx - bw / 2 - 6, by, bw, 36, '设置', () => this.showSettings(), COLORS.dim, 15));
-        c.add(makeButton(this, leftCx + bw / 2 + 6, by, bw, 36, '返回菜单', () => this.toMenu(), COLORS.hp, 15));
+        c.add(makeButton(this, leftCx + bw / 2 + 6, by, bw, 36, '结束游戏', () => this.endRun(), COLORS.hp, 15));
       }
     });
     this.primary = () => {
@@ -705,6 +705,12 @@ export class UIScene extends Phaser.Scene {
     this.closeModal();
     this.scene.stop('Game');
     this.scene.start('Game', { char, map });
+  }
+
+  /** Pause menu "end game": leave the modal and let the run end in a death, then the results screen. */
+  private endRun() {
+    this.closeModal();
+    this.gs.forfeit();
   }
 
   private toMenu() {

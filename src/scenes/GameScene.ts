@@ -1143,6 +1143,14 @@ export class GameScene extends Phaser.Scene {
     this.scene.resume();
   }
 
+  /** "End game" from the pause menu: the player dies on the spot and the run settles like any death. */
+  forfeit() {
+    if (this.state !== 'paused') return;
+    this.resumeFromPause();
+    this.reviveUsed = true; // a voluntary end shouldn't burn through the revive perk
+    this.die();
+  }
+
   private beginEnd(win: boolean, delay: number) {
     this.state = 'ending';
     this.endWin = win;
