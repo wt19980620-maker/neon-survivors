@@ -298,10 +298,15 @@ export class MenuScene extends Phaser.Scene {
         x = w / 2 - ((n - 1) * (cw + gap)) / 2 + i * (cw + gap);
         y = cardsTop + chh / 2;
       } else {
-        cw = Math.min(460, w - 24);
-        chh = Math.min(96, (cardsBottom - 34 - cardsTop) / n - 8);
-        x = w / 2;
-        y = cardsTop + chh / 2 + i * (chh + 8);
+        // list rows; two columns when a single column would squash them (landscape phones)
+        const avail = cardsBottom - 34 - cardsTop;
+        const gap = 8;
+        const cols = avail / n - gap < 50 && w >= 540 ? 2 : 1;
+        const rows = Math.ceil(n / cols);
+        cw = Math.min(460, (w - 24 - ins.left - ins.right - gap * (cols - 1)) / cols);
+        chh = Math.min(96, avail / rows - gap);
+        x = w / 2 - ((cols - 1) * (cw + gap)) / 2 + (i % cols) * (cw + gap);
+        y = cardsTop + chh / 2 + Math.floor(i / cols) * (chh + gap);
       }
       const card = this.add.container(x, y);
       const edge = selected ? ch.color : unlocked ? COLORS.panelEdge : 0x2a2650;
@@ -342,15 +347,19 @@ export class MenuScene extends Phaser.Scene {
         }
       } else {
         const left = -cw / 2;
-        card.add(this.add.image(left + 36, 0, `player_${ch.id}`).setScale(1.5 * texScale()).setAlpha(unlocked ? 1 : 0.25));
-        if (!unlocked) card.add(this.add.image(left + 36, 0, 'icon_lock').setDisplaySize(32, 32));
-        card.add(this.add.text(left + 70, -chh / 2 + 10, ch.name, style(17, unlocked ? ch.color : COLORS.dim, true)));
-        card.add(this.add.image(cw / 2 - 20, -chh / 2 + 20, weapon.icon).setDisplaySize(24, 24).setAlpha(unlocked ? 1 : 0.4));
+        // short rows pull the name and the detail line closer together
+        const tight = chh < 58;
+        card.add(this.add.image(left + 36, 0, `player_${ch.id}`).setScale((tight ? 1.3 : 1.5) * texScale()).setAlpha(unlocked ? 1 : 0.25));
+        if (!unlocked) card.add(this.add.image(left + 36, 0, 'icon_lock').setDisplaySize(tight ? 28 : 32, tight ? 28 : 32));
+        card.add(this.add.text(left + 70, -chh / 2 + (tight ? 4 : 10), ch.name, style(tight ? 15 : 17, unlocked ? ch.color : COLORS.dim, true)));
+        card.add(this.add.image(cw / 2 - 20, -chh / 2 + (tight ? 16 : 20), weapon.icon).setDisplaySize(24, 24).setAlpha(unlocked ? 1 : 0.4));
         const sub = !unlocked && unlockAch ? `解锁：${unlockAch.desc}` : `${lines.join(' · ') || '均衡，无属性修正'}`;
-        card.add(this.add.text(left + 70, -chh / 2 + 36, sub, {
-          ...style(12, !unlocked ? COLORS.elite : COLORS.text), wordWrap: { width: cw - 90, useAdvancedWrap: true },
+        // narrow rows (two columns) get a smaller detail line so three stat changes stay on one line
+        const narrow = cw < 290;
+        card.add(this.add.text(left + 70, -chh / 2 + (tight ? 25 : 36), sub, {
+          ...style(narrow || tight ? 11 : 12, !unlocked ? COLORS.elite : COLORS.text), wordWrap: { width: cw - 80, useAdvancedWrap: true },
         }));
-        if (selected) card.add(this.add.text(cw / 2 - 10, chh / 2 - 6, '✓', style(16, ch.color, true)).setOrigin(1, 1));
+        if (selected) card.add(this.add.text(cw / 2 - 40, -chh / 2 + (tight ? 16 : 20), '✓', style(16, ch.color, true)).setOrigin(1, 0.5));
       }
       c.add(card);
     });

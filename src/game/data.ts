@@ -431,7 +431,7 @@ export const ENDLESS_EVENT_EVERY = 75;
 
 // ---------------------------------------------------------------- characters
 
-export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk';
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro';
 
 /** Multipliers default to 1, additive bonuses to 0. */
 export interface CharMods {
@@ -473,6 +473,10 @@ export const CHARACTERS: CharDef[] = [
   {
     id: 'monk', name: '脉冲修士', color: 0xff6b8b, weapon: 'nova', desc: '持续回复生命，拾取范围大',
     mods: { regen: 1, magnet: 1.5, might: 0.9 }, unlock: 'level25',
+  },
+  {
+    id: 'pyro', name: '烈焰术士', color: 0xff8a3d, weapon: 'fireball', desc: '火力凶猛，但步伐稍慢',
+    mods: { might: 1.1, area: 1.2, speed: 0.95 }, unlock: 'survive8',
   },
 ];
 

@@ -13,7 +13,7 @@ create table if not exists public.scores (
   grp         text        not null default '' check (char_length(grp) <= 16),
   mode        text        not null check (mode in ('standard', 'endless')),
   map         text        not null check (map in ('grid', 'crystal', 'abyss')),
-  char        text        not null check (char in ('runner', 'guardian', 'assassin', 'storm', 'monk')),
+  char        text        not null check (char in ('runner', 'guardian', 'assassin', 'storm', 'monk', 'pyro')),
   time_s      integer     not null check (time_s between 0 and 14400),
   kills       integer     not null check (kills between 0 and 2000000),
   level       integer     not null check (level between 1 and 300),
