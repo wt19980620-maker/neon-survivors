@@ -1,5 +1,5 @@
 import type { EnemyKind } from './data';
-import { RUN_LENGTH } from './data';
+import { ENDLESS_BOSS_EVERY, ENDLESS_BOSS_SCALE, ENDLESS_EVENT_EVERY, RUN_LENGTH } from './data';
 import { sfx } from './audio';
 import type { GameScene } from '../scenes/GameScene';
 
@@ -14,6 +14,11 @@ export class Director {
   private acc = 0;
   private nextElite = 70;
   private events: ScriptedEvent[];
+  // endless mode, after the final boss
+  private nextBoss = RUN_LENGTH + ENDLESS_BOSS_EVERY;
+  private nextEvent = RUN_LENGTH + 40;
+  /** endless bosses spawned so far (the regular two don't count) */
+  bossWave = 0;
 
   constructor(private readonly g: GameScene) {
     this.events = [
@@ -50,6 +55,19 @@ export class Director {
       if (!ev.done && t >= ev.t) {
         ev.done = true;
         ev.run();
+      }
+    }
+
+    if (g.mode === 'endless' && t >= RUN_LENGTH) {
+      if (t >= this.nextBoss) {
+        this.nextBoss += ENDLESS_BOSS_EVERY;
+        this.bossWave++;
+        // alternate the two bosses, each wave tougher than the last
+        this.boss(this.bossWave % 2 === 0, ENDLESS_BOSS_SCALE ** this.bossWave);
+      }
+      if (t >= this.nextEvent) {
+        this.nextEvent += ENDLESS_EVENT_EVERY;
+        this.randomEvent(t);
       }
     }
 
@@ -132,11 +150,28 @@ export class Director {
     sfx.play('warn');
   }
 
-  private boss(final: boolean) {
+  /** Endless: one of the scripted swarms, bigger the longer the run goes. */
+  private randomEvent(t: number) {
+    const k = 1 + (t - RUN_LENGTH) / 300;
+    const n = (base: number) => Math.round(base * k);
+    const pool: (() => void)[] = [
+      () => this.ring('chaser', n(40), '被包围了！'),
+      () => this.ring('brute', n(22), '重甲方阵！'),
+      () => this.ring('spitter', n(14), '远程火力网！'),
+      () => this.rush('bat', n(80), '蜂群来袭！'),
+      () => this.rush('bomber', n(28), '自爆虫潮！'),
+      () => this.rush('chaser', n(90), '潮水涌来！'),
+    ];
+    pool[Math.floor(Math.random() * pool.length)]();
+  }
+
+  private boss(final: boolean, hpScale = 1) {
     const g = this.g;
     const p = g.spawnPoint();
-    g.spawnEnemy('boss', p.x, p.y, { boss: true, final });
-    g.ui()?.banner(final ? '最终首领 · 虚空之主' : '首领来袭 · 猩红守望者', true);
+    g.spawnEnemy('boss', p.x, p.y, { boss: true, final, hpScale });
+    const name = final ? '虚空之主' : '猩红守望者';
+    const title = this.bossWave > 0 ? `第 ${this.bossWave} 波首领` : final ? '最终首领' : '首领来袭';
+    g.ui()?.banner(`${title} · ${name}`, true);
     sfx.play('boss');
     g.shake(400, 0.006);
   }

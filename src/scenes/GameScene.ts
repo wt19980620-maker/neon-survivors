@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS, PASSIVE_IDS, WEAPON_IDS, xpToNext,
-  type CharId, type EnemyKind, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
+  type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import {
   checkAchievements, commitRun, isCharUnlocked, isMapUnlocked, type AchievementDef, type RunSnapshot,
@@ -55,6 +55,9 @@ export interface UpgradeOption {
 
 export interface RunResult {
   win: boolean;
+  mode: GameMode;
+  /** endless bosses defeated or reached */
+  bossWave: number;
   time: number;
   level: number;
   kills: number;
@@ -97,6 +100,7 @@ export class GameScene extends Phaser.Scene {
   // --- internals
   private director!: Director;
   mapDef: MapDef = MAPS[0];
+  mode: GameMode = 'standard';
   private obstacles!: ObstacleField;
   private shakeScale = 1;
   private showDamage = true;
@@ -140,6 +144,11 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
+  /** endless-mode boss waves reached so far */
+  get bossWave() {
+    return this.director.bossWave;
+  }
+
   get enemies(): Enemy[] {
     return this.enemyPool.active;
   }
@@ -151,9 +160,10 @@ export class GameScene extends Phaser.Scene {
 
   // ================================================================ lifecycle
 
-  create(data?: { char?: CharId; map?: MapId }) {
+  create(data?: { char?: CharId; map?: MapId; mode?: GameMode }) {
     this.resetState();
     const save = loadSave();
+    this.mode = data?.mode ?? save.selectedMode ?? 'standard';
     const wantedMap = data?.map ?? save.selectedMap;
     this.mapDef = MAP_BY_ID[isMapUnlocked(wantedMap) ? wantedMap : 'grid'];
     this.shakeScale = save.shake;
@@ -408,7 +418,7 @@ export class GameScene extends Phaser.Scene {
     return this.bosses.length > 0;
   }
 
-  spawnEnemy(kind: EnemyKind, x: number, y: number, opts: { elite?: boolean; boss?: boolean; final?: boolean } = {}) {
+  spawnEnemy(kind: EnemyKind, x: number, y: number, opts: { elite?: boolean; boss?: boolean; final?: boolean; hpScale?: number } = {}) {
     const def = ENEMY_DEFS[kind];
     const e = this.enemyPool.get();
     const d = this.director;
@@ -444,7 +454,7 @@ export class GameScene extends Phaser.Scene {
       scale = 1.5;
     }
     if (e.boss) {
-      hp = (e.finalBoss ? 14000 : 3500) * this.mapDef.hpMult;
+      hp = (e.finalBoss ? 14000 : 3500) * this.mapDef.hpMult * (opts.hpScale ?? 1);
       damage = e.finalBoss ? 32 : 24;
       speed = e.finalBoss ? 74 : 64;
       scale = e.finalBoss ? 1.3 : 1;
@@ -787,7 +797,9 @@ export class GameScene extends Phaser.Scene {
       this.coins += e.finalBoss ? 60 : 30;
       if (e.finalBoss) this.boss2Killed = true;
       else this.boss1Killed = true;
-      if (e.finalBoss) this.victory();
+      // endless: the final boss is just another milestone
+      if (e.finalBoss && this.mode === 'standard') this.victory();
+      else if (e.finalBoss && this.director.bossWave === 0) this.ui()?.banner('虚空之主倒下……但深渊仍在延续', true, COLORS.elite);
       return;
     }
     if (e.elite) {
@@ -1145,6 +1157,7 @@ export class GameScene extends Phaser.Scene {
   private snapshot(ended: boolean): RunSnapshot {
     return {
       char: this.charId,
+      mode: this.mode,
       kills: this.kills,
       level: this.level,
       time: this.elapsed,
@@ -1169,7 +1182,7 @@ export class GameScene extends Phaser.Scene {
     if (this.settled) return null;
     this.settled = true;
     const save = loadSave();
-    const newBest = this.elapsed > save.best.time;
+    const newBest = this.mode === 'endless' ? this.elapsed > save.stats.endlessBest : this.elapsed > save.best.time;
     const minutes = this.elapsed / 60;
     const gold = Math.floor((this.coins + this.kills * 0.02 + minutes * 8 + (this.endWin ? 150 : 0)) * this.stats.greed * this.mapDef.goldMult);
     this.pollAchievements(true);
@@ -1193,7 +1206,7 @@ export class GameScene extends Phaser.Scene {
       .sort((a, b) => b.value - a.value);
     this.scene.pause();
     this.ui()?.showResult({
-      win: this.endWin, time: this.elapsed, level: this.level, kills: this.kills,
+      win: this.endWin, mode: this.mode, bossWave: this.director.bossWave, time: this.elapsed, level: this.level, kills: this.kills,
       gold: settled.gold, totalGold: loadSave().gold, newBest: settled.newBest, damage,
       achievements: this.runAchievements,
     });

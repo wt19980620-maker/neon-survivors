@@ -144,7 +144,7 @@ export class MenuScene extends Phaser.Scene {
     const bottom = h - ins.bottom;
     const b = save.best;
     if (b.time > 0) {
-      c.add(this.add.text(w / 2, bottom - (compact ? 30 : 56), `最长存活 ${formatTime(b.time)}  ·  最多击杀 ${b.kills}  ·  最高等级 ${b.level}  ·  通关 ${b.wins} 次`, {
+      c.add(this.add.text(w / 2, bottom - (compact ? 30 : 56), `最长存活 ${formatTime(b.time)}  ·  最多击杀 ${b.kills}  ·  最高等级 ${b.level}  ·  通关 ${b.wins} 次${save.stats.endlessBest > 0 ? `  ·  无尽 ${formatTime(save.stats.endlessBest)}` : ''}`, {
         ...style(compact ? 12 : 13, COLORS.dim), align: 'center', wordWrap: { width: w - 32, useAdvancedWrap: true },
       }).setOrigin(0.5, 1));
     }
@@ -171,7 +171,7 @@ export class MenuScene extends Phaser.Scene {
     const map = MAPS[this.mapIndex]?.id ?? save.selectedMap;
     if (!isCharUnlocked(char) || !isMapUnlocked(map)) return;
     sfx.unlock();
-    this.scene.start('Game', { char, map });
+    this.scene.start('Game', { char, map, mode: save.selectedMode });
   }
 
   /** Browse maps (locked ones too, so players can see what to unlock). */
@@ -257,9 +257,21 @@ export class MenuScene extends Phaser.Scene {
     const wide = w >= 900 || (short && canSplit(w));
     const titleY = ins.top + (short ? 24 : wide ? h * 0.12 : 40);
     c.add(glowText(this.add.text(w / 2, titleY, '选择角色', style(short ? 24 : wide ? 36 : 28, COLORS.player, true)).setOrigin(0.5), COLORS.player, 14));
-    if (!short) c.add(this.add.text(w / 2, titleY + (wide ? 36 : 28), wide && !isTouch() ? '点击选择 · ←/→ 切换 · Enter 出发' : '点击选择角色', style(13, COLORS.dim)).setOrigin(0.5));
+    // mode toggle: top-right when there's room, otherwise it takes the subtitle's place under the title
+    const modeInCorner = w >= 520;
+    const endless = save.selectedMode === 'endless';
+    const modeLabel = endless ? '模式：无尽' : '模式：标准';
+    const toggleMode = () => {
+      save.selectedMode = endless ? 'standard' : 'endless';
+      writeSave();
+      sfx.play('select');
+      this.openOverlay('chars');
+    };
+    if (modeInCorner) c.add(makeButton(this, w - ins.right - 80, titleY, 124, 32, modeLabel, toggleMode, endless ? COLORS.elite : COLORS.dim, 14));
+    else c.add(makeButton(this, w / 2, titleY + 36, 150, 28, modeLabel, toggleMode, endless ? COLORS.elite : COLORS.dim, 14));
+    if (!short && modeInCorner) c.add(this.add.text(w / 2, titleY + (wide ? 36 : 28), wide && !isTouch() ? '点击选择 · ←/→ 切换 · Enter 出发' : '点击选择角色', style(13, COLORS.dim)).setOrigin(0.5));
     const btnY = short ? h - ins.bottom - 30 : wide ? Math.min(h - 50, titleY + 70 + 320 + 56) : h - ins.bottom - 44;
-    const cardsTop = titleY + (short ? 26 : wide ? 70 : 58);
+    const cardsTop = titleY + (short ? 26 : wide ? 70 : modeInCorner ? 58 : 62);
     // map picker sits between the buttons when there's room, otherwise on its own row above them
     const inlineMap = w >= 560;
     const cardsBottom = inlineMap ? btnY : btnY - 58;

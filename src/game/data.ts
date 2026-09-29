@@ -287,6 +287,14 @@ export function metaCost(def: MetaDef, rank: number): number {
 
 export const RUN_LENGTH = 600; // seconds until the final boss arrives
 
+/** standard: beat the final boss to win; endless: bosses keep coming until you fall */
+export type GameMode = 'standard' | 'endless';
+/** endless: seconds between bosses after the final boss, and how much tougher each one gets */
+export const ENDLESS_BOSS_EVERY = 240;
+export const ENDLESS_BOSS_SCALE = 1.6;
+/** endless: seconds between random swarm events after RUN_LENGTH */
+export const ENDLESS_EVENT_EVERY = 75;
+
 // ---------------------------------------------------------------- characters
 
 export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk';

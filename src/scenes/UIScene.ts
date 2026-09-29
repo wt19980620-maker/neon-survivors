@@ -21,6 +21,7 @@ export class UIScene extends Phaser.Scene {
   private levelText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
   private killText!: Phaser.GameObjects.Text;
+  private modeText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
   private icons!: Phaser.GameObjects.Container;
   private iconSig = '';
@@ -64,6 +65,7 @@ export class UIScene extends Phaser.Scene {
     this.levelText = glowText(this.add.text(12, 16, 'Lv 1', style(18, COLORS.text, true)), COLORS.xp, 8).setDepth(10);
     this.timerText = glowText(this.add.text(0, 14, '00:00', style(28, COLORS.text, true)).setOrigin(0.5, 0), COLORS.player, 10).setDepth(10);
     this.killText = this.add.text(0, 16, '', style(16, COLORS.text)).setOrigin(1, 0).setDepth(10);
+    this.modeText = this.add.text(0, 0, '', style(12, COLORS.elite, true)).setOrigin(0.5, 0).setDepth(10);
     this.goldText = this.add.text(0, 38, '', style(16, COLORS.coin)).setOrigin(1, 0).setDepth(10);
     this.icons = this.add.container(12, 44).setDepth(10);
     this.bossBar = this.add.graphics().setDepth(10);
@@ -94,6 +96,7 @@ export class UIScene extends Phaser.Scene {
     const ins = (this.ins = safeArea());
     this.levelText.setPosition(12 + ins.left, 16 + ins.top);
     this.timerText.setPosition(w / 2, 14 + ins.top);
+    this.modeText.setPosition(w / 2, 48 + ins.top);
     this.killText.setPosition(w - 66 - ins.right, 16 + ins.top);
     this.goldText.setPosition(w - 66 - ins.right, 38 + ins.top);
     this.pauseBtn.setPosition(w - 32 - ins.right, 32 + ins.top);
@@ -126,7 +129,11 @@ export class UIScene extends Phaser.Scene {
     this.levelText.setText(`Lv ${gs.level}`);
     const t = gs.elapsed;
     this.timerText.setText(formatTime(t));
-    this.timerText.setColor(t >= RUN_LENGTH ? '#ff5c8a' : '#e8e6ff');
+    const endless = gs.mode === 'endless';
+    this.timerText.setColor(t >= RUN_LENGTH ? (endless ? '#ffd24d' : '#ff5c8a') : '#e8e6ff');
+    // endless: show the mode, and the boss wave once past the regular run length
+    this.modeText.setVisible(endless && !gs.bosses.some((b) => b.alive));
+    if (endless) this.modeText.setText(gs.bossWave > 0 ? `无尽模式 · 第 ${gs.bossWave} 波` : '无尽模式');
     this.killText.setText(`击杀 ${gs.kills}`);
     this.goldText.setText(`金币 ${gs.coins}`);
 
@@ -595,10 +602,11 @@ export class UIScene extends Phaser.Scene {
       const leftX = w / 2 - pw / 2 + (split ? 24 : 40);
       const leftR = split ? leftX + colW - 30 : w / 2 + pw / 2 - 40;
       const leftCx = split ? w / 2 - pw / 2 + 15 + colW / 2 : w / 2;
-      const color = r.win ? COLORS.coin : COLORS.hp;
+      const color = r.win ? COLORS.coin : r.mode === 'endless' ? COLORS.elite : COLORS.hp;
       c.add(panel(this, w / 2, h / 2, pw, ph, color));
-      c.add(glowText(this.add.text(leftCx, top + (split ? 32 : 44), r.win ? '胜利！' : '你倒下了', style(split ? 32 : 40, color, true)).setOrigin(0.5), color, 18));
-      if (r.newBest) c.add(this.add.text(leftCx, top + (split ? 62 : 80), '★ 新的最长存活纪录 ★', style(split ? 13 : 15, COLORS.coin, true)).setOrigin(0.5));
+      const title = r.win ? '胜利！' : r.mode === 'endless' ? '无尽结束' : '你倒下了';
+      c.add(glowText(this.add.text(leftCx, top + (split ? 32 : 44), title, style(split ? 32 : 40, color, true)).setOrigin(0.5), color, 18));
+      if (r.newBest) c.add(this.add.text(leftCx, top + (split ? 62 : 80), r.mode === 'endless' ? '★ 新的无尽纪录 ★' : '★ 新的最长存活纪录 ★', style(split ? 13 : 15, COLORS.coin, true)).setOrigin(0.5));
 
       const stats = [
         ['存活时间', formatTime(r.time)],

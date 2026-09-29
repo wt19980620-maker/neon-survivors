@@ -1,9 +1,10 @@
-import { CHARACTERS, MAPS, type CharId, type MapId, type WeaponId } from './data';
+import { CHARACTERS, MAPS, type CharId, type GameMode, type MapId, type WeaponId } from './data';
 import { loadSave, writeSave, type LifetimeStats, type SaveData } from './save';
 
 /** What happened in the current (or just-finished) run. */
 export interface RunSnapshot {
   char: CharId;
+  mode: GameMode;
   kills: number;
   level: number;
   time: number;
@@ -81,6 +82,14 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     value: (s, r) => union(s.stats.evolved, r?.evolved ?? []),
   },
   {
+    id: 'endless15', name: '永不止步', desc: '无尽模式存活 15 分钟', gold: 200, target: 900,
+    value: (s, r) => Math.floor(Math.max(s.stats.endlessBest, r?.mode === 'endless' ? r.time : 0)),
+  },
+  {
+    id: 'endless20', name: '深渊行者', desc: '无尽模式存活 20 分钟', gold: 400, target: 1200,
+    value: (s, r) => Math.floor(Math.max(s.stats.endlessBest, r?.mode === 'endless' ? r.time : 0)),
+  },
+  {
     id: 'win3', name: '众志成城', desc: '用 3 个不同角色通关', gold: 500, target: 3,
     value: (s, r) => union(s.stats.winChars, r?.boss2 ? [r.char] : []),
   },
@@ -151,6 +160,7 @@ export function commitRun(run: RunSnapshot) {
   st.evolved = [...new Set([...st.evolved, ...run.evolved])];
   if (run.boss2 && !st.winChars.includes(run.char)) st.winChars.push(run.char);
   st.bestMaxed = Math.max(st.bestMaxed, run.maxedWeapons);
+  if (run.mode === 'endless') st.endlessBest = Math.max(st.endlessBest, run.time);
   if (run.time >= 180 && (run.firstHurt < 0 || run.firstHurt >= 180)) st.untouched += 1;
   s.best.time = Math.max(s.best.time, run.time);
   s.best.kills = Math.max(s.best.kills, run.kills);

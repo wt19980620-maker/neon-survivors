@@ -1,4 +1,4 @@
-import type { CharId, MapId, MetaId, WeaponId } from './data';
+import type { CharId, GameMode, MapId, MetaId, WeaponId } from './data';
 
 /** Lifetime totals, used by achievements. Only updated when a run ends. */
 export interface LifetimeStats {
@@ -10,6 +10,8 @@ export interface LifetimeStats {
   winChars: CharId[];
   bestMaxed: number;
   untouched: number;
+  /** longest endless-mode survival, seconds */
+  endlessBest: number;
 }
 
 export interface SaveData {
@@ -29,6 +31,7 @@ export interface SaveData {
   shake: number;
   damageNumbers: boolean;
   selectedMap: MapId;
+  selectedMode: GameMode;
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -38,7 +41,7 @@ function defaults(): SaveData {
     gold: 0,
     meta: {},
     best: { time: 0, kills: 0, level: 0, wins: 0 },
-    stats: { kills: 0, runs: 0, boss1: 0, boss2: 0, evolved: [], winChars: [], bestMaxed: 0, untouched: 0 },
+    stats: { kills: 0, runs: 0, boss1: 0, boss2: 0, evolved: [], winChars: [], bestMaxed: 0, untouched: 0, endlessBest: 0 },
     achievements: [],
     selectedChar: 'runner',
     muted: false,
@@ -49,6 +52,7 @@ function defaults(): SaveData {
     shake: 1,
     damageNumbers: true,
     selectedMap: 'grid',
+    selectedMode: 'standard',
   };
 }
 
