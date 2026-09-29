@@ -21,6 +21,8 @@ export interface SaveData {
   selectedChar: CharId;
   muted: boolean;
   music: boolean;
+  /** 'high' renders at up to 2.5× pixel density, 'smooth' caps it at 1.5× for weaker phones */
+  quality: 'high' | 'smooth';
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -35,6 +37,7 @@ function defaults(): SaveData {
     selectedChar: 'runner',
     muted: false,
     music: true,
+    quality: 'high',
   };
 }
 

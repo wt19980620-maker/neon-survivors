@@ -3,6 +3,7 @@ import { EVOLUTIONS, WEAPON_LEVELS, type WeaponId, type WeaponStats } from './da
 import { COLORS } from './palette';
 import { sfx } from './audio';
 import { Pool, type Enemy, type Pooled } from './entities';
+import { texScale } from './textures';
 import type { GameScene } from '../scenes/GameScene';
 
 const DEPTH_PROJ = 20;
@@ -174,7 +175,7 @@ class BoltWeapon extends Weapon {
     b.homing = this.evolved;
     b.target = t;
     b.retarget = 0.15;
-    b.sprite.setTexture(this.evolved ? 'bolt_evo' : 'bolt').setPosition(b.x, b.y).setRotation(ang).setScale(this.area());
+    b.sprite.setTexture(this.evolved ? 'bolt_evo' : 'bolt').setPosition(b.x, b.y).setRotation(ang).setScale(this.area() * texScale());
     sfx.play('shoot');
   }
 
@@ -223,7 +224,7 @@ class OrbitWeapon extends Weapon {
       const a = this.angle + (i / n) * TAU;
       const x = g.px + Math.cos(a) * radius;
       const y = g.py + Math.sin(a) * radius;
-      this.blades[i].setPosition(x, y).setRotation(a + Math.PI / 2).setScale(area);
+      this.blades[i].setPosition(x, y).setRotation(a + Math.PI / 2).setScale(area * texScale());
       this.tmp.length = 0;
       for (const e of g.queryEnemies(x, y, hitR, this.tmp)) {
         if ((e.hitUntil.get(this.src) ?? 0) > g.elapsed) continue;
@@ -466,7 +467,7 @@ class DiscWeapon extends Weapon {
         d.dy = dy / len;
       }
       const scale = d.mini ? area * 0.6 : area;
-      d.sprite.setPosition(d.x, d.y).setScale(scale).setRotation(d.sprite.rotation + 14 * dt);
+      d.sprite.setPosition(d.x, d.y).setScale(scale * texScale()).setRotation(d.sprite.rotation + 14 * dt);
       this.tmp.length = 0;
       for (const e of g.queryEnemies(d.x, d.y, 15 * scale, this.tmp)) {
         if ((e.hitUntil.get(d.src) ?? 0) > g.elapsed) continue;
@@ -594,8 +595,9 @@ class FrostWeapon extends Weapon {
     const s = this.s;
     const r = s.extra * this.area();
     const pulse = 1 + Math.sin(g.elapsed * 3) * 0.03;
-    this.aura.setPosition(g.px, g.py).setScale((r / 32) * pulse);
-    this.ring.setPosition(g.px, g.py).setScale((r / 110) * pulse).setRotation(g.elapsed * 0.3);
+    const k = texScale();
+    this.aura.setPosition(g.px, g.py).setScale((r / 32) * pulse * k);
+    this.ring.setPosition(g.px, g.py).setScale((r / 110) * pulse * k).setRotation(g.elapsed * 0.3);
 
     this.timer -= dt;
     if (this.timer <= 0) {
@@ -678,7 +680,7 @@ class MineWeapon extends Weapon {
         m.arm = 0.35;
         m.life = 14;
         m.chainT = -1;
-        m.sprite.setTexture(this.evolved ? 'mine_evo' : 'mine').setPosition(m.x, m.y).setAlpha(0.5).setScale(this.area());
+        m.sprite.setTexture(this.evolved ? 'mine_evo' : 'mine').setPosition(m.x, m.y).setAlpha(0.5).setScale(this.area() * texScale());
       }
     }
 

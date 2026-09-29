@@ -8,7 +8,8 @@ import {
   ACHIEVEMENTS, ACHIEVEMENT_BY_ID, charUnlockedBy, checkAchievements, isCharUnlocked, isDone,
 } from '../game/achievements';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
-import { canSplit, isShort, isTouch, safeArea } from '../ui/screen';
+import { canSplit, fitCamera, isShort, isTouch, safeArea, vh, vw } from '../ui/screen';
+import { texScale } from '../game/textures';
 
 interface Drifter {
   img: Phaser.GameObjects.Image;
@@ -37,14 +38,15 @@ export class MenuScene extends Phaser.Scene {
     this.overlay = null;
     this.overlayKind = null;
     this.achPage = 0;
-    this.bg = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'grid').setOrigin(0);
+    fitCamera(this);
+    this.bg = this.add.tileSprite(0, 0, vw(this), vh(this), 'grid').setOrigin(0).setTileScale(texScale());
     const kinds = ['e_chaser', 'e_bat', 'e_brute', 'gem1', 'gem2', 'blade', 'disc'];
     for (let i = 0; i < 36; i++) {
       const img = this.add.image(
-        Math.random() * this.scale.width,
-        Math.random() * this.scale.height,
+        Math.random() * vw(this),
+        Math.random() * vh(this),
         kinds[i % kinds.length],
-      ).setAlpha(0.18 + Math.random() * 0.2).setBlendMode(Phaser.BlendModes.ADD).setScale(0.8 + Math.random() * 0.8);
+      ).setAlpha(0.18 + Math.random() * 0.2).setBlendMode(Phaser.BlendModes.ADD).setScale((0.8 + Math.random() * 0.8) * texScale());
       this.drifters.push({ img, vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 30, spin: (Math.random() - 0.5) * 1.5 });
     }
 
@@ -82,15 +84,16 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private onResize() {
-    this.bg.setSize(this.scale.width, this.scale.height);
+    fitCamera(this);
+    this.bg.setSize(vw(this), vh(this));
     this.buildMain();
     if (this.overlayKind) this.openOverlay(this.overlayKind);
   }
 
   private buildMain() {
     this.main?.destroy();
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = vw(this);
+    const h = vh(this);
     const save = loadSave();
     const c = this.add.container(0, 0);
     this.main = c;
@@ -113,15 +116,13 @@ export class MenuScene extends Phaser.Scene {
       c.add(makeButton(this, w / 2, by, 240, 48, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 22));
       c.add(makeButton(this, w / 2 - 86, by + 56, 164, 40, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 17));
       c.add(makeButton(this, w / 2 + 86, by + 56, 164, 40, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 17));
-      c.add(makeButton(this, w / 2 - 61, by + 104, 118, 34, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, 14));
-      c.add(makeButton(this, w / 2 + 61, by + 104, 118, 34, save.music ? '音乐：开' : '音乐：关', () => this.toggleMusic(), COLORS.dim, 14));
+      this.settingsRow(c, w / 2, by + 104, 34, 14);
     } else {
       by = h * 0.5;
       c.add(makeButton(this, w / 2, by, 240, 54, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 24));
       c.add(makeButton(this, w / 2, by + 66, 240, 44, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 19));
       c.add(makeButton(this, w / 2, by + 120, 240, 44, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 19));
-      c.add(makeButton(this, w / 2 - 61, by + 170, 118, 36, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, 15));
-      c.add(makeButton(this, w / 2 + 61, by + 170, 118, 36, save.music ? '音乐：开' : '音乐：关', () => this.toggleMusic(), COLORS.dim, 15));
+      this.settingsRow(c, w / 2, by + 170, 36, 15);
     }
 
     c.add(glowText(this.add.text(w - 20 - ins.right, 18 + ins.top, `金币 ${save.gold}`, style(20, COLORS.coin, true)).setOrigin(1, 0), COLORS.coin, 8));
@@ -150,6 +151,24 @@ export class MenuScene extends Phaser.Scene {
     c.add(this.add.text(w / 2, bottom - (compact ? 14 : 30), hint, {
       ...style(compact ? 12 : 14, COLORS.dim), align: 'center', wordWrap: { width: w - 32, useAdvancedWrap: true },
     }).setOrigin(0.5));
+  }
+
+  /** Sound / music / quality toggles, three abreast. */
+  private settingsRow(c: Phaser.GameObjects.Container, cx: number, y: number, bh: number, size: number) {
+    const save = loadSave();
+    const bw = 96;
+    const gap = bw + 6;
+    c.add(makeButton(this, cx - gap, y, bw, bh, save.muted ? '声音：关' : '声音：开', () => this.toggleMute(), COLORS.dim, size));
+    c.add(makeButton(this, cx, y, bw, bh, save.music ? '音乐：开' : '音乐：关', () => this.toggleMusic(), COLORS.dim, size));
+    c.add(makeButton(this, cx + gap, y, bw, bh, save.quality === 'smooth' ? '画质：流畅' : '画质：高清', () => this.toggleQuality(), COLORS.dim, size));
+  }
+
+  /** Render density is fixed at boot (textures are baked for it), so apply by reloading. */
+  private toggleQuality() {
+    const save = loadSave();
+    save.quality = save.quality === 'smooth' ? 'high' : 'smooth';
+    writeSave();
+    window.location.reload();
   }
 
   private toggleMute() {
@@ -189,8 +208,8 @@ export class MenuScene extends Phaser.Scene {
 
   private openOverlay(kind: OverlayKind) {
     this.overlay?.destroy();
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = vw(this);
+    const h = vh(this);
     const c = this.add.container(0, 0).setDepth(50);
     c.add(this.add.rectangle(0, 0, w, h, 0x000000, 0.72).setOrigin(0).setInteractive());
     this.overlay = c;
@@ -261,7 +280,7 @@ export class MenuScene extends Phaser.Scene {
       const unlockAch = ch.unlock ? ACHIEVEMENT_BY_ID[ch.unlock] : null;
       if (wide && chh < 300) {
         // compact card for landscape phones: drop the flavour line, tighten the spacing
-        card.add(this.add.image(0, -chh / 2 + 36, `player_${ch.id}`).setScale(1.6).setAlpha(unlocked ? 1 : 0.25));
+        card.add(this.add.image(0, -chh / 2 + 36, `player_${ch.id}`).setScale(1.6 * texScale()).setAlpha(unlocked ? 1 : 0.25));
         if (!unlocked) card.add(this.add.image(0, -chh / 2 + 36, 'icon_lock').setDisplaySize(32, 32));
         card.add(glowText(this.add.text(0, -chh / 2 + 76, ch.name, style(18, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0.5), ch.color, unlocked ? 8 : 0));
         card.add(this.add.image(-cw / 2 + 22, -chh / 2 + 104, weapon.icon).setDisplaySize(22, 22).setAlpha(unlocked ? 1 : 0.4));
@@ -273,7 +292,7 @@ export class MenuScene extends Phaser.Scene {
           card.add(this.add.text(0, chh / 2 - 10, '✓ 已选择', style(13, ch.color, true)).setOrigin(0.5, 1));
         }
       } else if (wide) {
-        card.add(this.add.image(0, -chh / 2 + 56, `player_${ch.id}`).setScale(2.2).setAlpha(unlocked ? 1 : 0.25));
+        card.add(this.add.image(0, -chh / 2 + 56, `player_${ch.id}`).setScale(2.2 * texScale()).setAlpha(unlocked ? 1 : 0.25));
         if (!unlocked) card.add(this.add.image(0, -chh / 2 + 56, 'icon_lock').setDisplaySize(40, 40));
         card.add(glowText(this.add.text(0, -chh / 2 + 118, ch.name, style(20, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0.5), ch.color, unlocked ? 8 : 0));
         card.add(this.add.text(0, -chh / 2 + 146, ch.desc, { ...style(13, COLORS.dim), align: 'center', wordWrap: { width: cw - 20, useAdvancedWrap: true } }).setOrigin(0.5, 0));
@@ -287,7 +306,7 @@ export class MenuScene extends Phaser.Scene {
         }
       } else {
         const left = -cw / 2;
-        card.add(this.add.image(left + 36, 0, `player_${ch.id}`).setScale(1.5).setAlpha(unlocked ? 1 : 0.25));
+        card.add(this.add.image(left + 36, 0, `player_${ch.id}`).setScale(1.5 * texScale()).setAlpha(unlocked ? 1 : 0.25));
         if (!unlocked) card.add(this.add.image(left + 36, 0, 'icon_lock').setDisplaySize(32, 32));
         card.add(this.add.text(left + 70, -chh / 2 + 10, ch.name, style(17, unlocked ? ch.color : COLORS.dim, true)));
         card.add(this.add.image(cw / 2 - 20, -chh / 2 + 20, weapon.icon).setDisplaySize(24, 24).setAlpha(unlocked ? 1 : 0.4));
@@ -433,8 +452,8 @@ export class MenuScene extends Phaser.Scene {
     const dt = deltaMs / 1000;
     this.bg.tilePositionX += 12 * dt;
     this.bg.tilePositionY += 8 * dt;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = vw(this);
+    const h = vh(this);
     for (const d of this.drifters) {
       d.img.x += d.vx * dt;
       d.img.y += d.vy * dt;

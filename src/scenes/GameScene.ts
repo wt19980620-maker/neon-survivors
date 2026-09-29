@@ -17,7 +17,8 @@ import {
 import { createWeapon, type Weapon } from '../game/weapons';
 import { Director } from '../game/director';
 import { inputState } from '../game/input';
-import { vibrate } from '../ui/screen';
+import { res, vh, vibrate, vw } from '../ui/screen';
+import { texScale } from '../game/textures';
 import type { UIScene } from './UIScene';
 
 const TAU = Math.PI * 2;
@@ -151,11 +152,12 @@ export class GameScene extends Phaser.Scene {
     this.charId = isCharUnlocked(wanted) ? wanted : 'runner';
     const char = CHAR_BY_ID[this.charId];
 
-    this.bg = this.add.tileSprite(0, 0, 64, 64, 'grid').setOrigin(0).setDepth(-10);
+    const k = texScale();
+    this.bg = this.add.tileSprite(0, 0, 64, 64, 'grid').setOrigin(0).setDepth(-10).setTileScale(k);
     this.aura = this.add.image(0, 0, 'glow').setDepth(29).setBlendMode(Phaser.BlendModes.ADD)
-      .setTint(char.color).setAlpha(0.3).setScale(1.8);
-    this.playerSprite = this.add.image(0, 0, `player_${char.id}`).setDepth(30);
-    this.dirSprite = this.add.image(0, 0, `player_dir_${char.id}`).setDepth(30);
+      .setTint(char.color).setAlpha(0.3).setScale(1.8 * k);
+    this.playerSprite = this.add.image(0, 0, `player_${char.id}`).setDepth(30).setScale(k);
+    this.dirSprite = this.add.image(0, 0, `player_dir_${char.id}`).setDepth(30).setScale(k);
     this.fx = this.add.graphics().setDepth(40).setBlendMode(Phaser.BlendModes.ADD);
     this.overlay = this.add.graphics().setDepth(45);
 
@@ -165,7 +167,7 @@ export class GameScene extends Phaser.Scene {
       kind: 'gem', x: 0, y: 0, value: 0, attracted: false, v: 0, t: 0, age: 0,
     }));
     this.bulletPool = new Pool<EnemyBullet>(() => ({
-      alive: false, sprite: this.add.image(0, 0, 'ebullet').setDepth(25).setBlendMode(Phaser.BlendModes.ADD),
+      alive: false, sprite: this.add.image(0, 0, 'ebullet').setDepth(25).setBlendMode(Phaser.BlendModes.ADD).setScale(k),
       x: 0, y: 0, vx: 0, vy: 0, life: 0, damage: 0,
     }));
     this.fxPool = new Pool<FxSprite>(() => ({
@@ -244,8 +246,9 @@ export class GameScene extends Phaser.Scene {
 
   private applyZoom() {
     const cam = this.cameras.main;
-    const m = Math.min(this.scale.width, this.scale.height);
-    cam.setZoom(Phaser.Math.Clamp(m / 760, 0.62, 1));
+    // world zoom is chosen in logical pixels, then multiplied up to the canvas' physical density
+    const m = Math.min(vw(this), vh(this));
+    cam.setZoom(Phaser.Math.Clamp(m / 760, 0.62, 1) * res());
     this.bg?.setSize(this.scale.width / cam.zoom + 256, this.scale.height / cam.zoom + 256);
   }
 
@@ -316,7 +319,7 @@ export class GameScene extends Phaser.Scene {
     this.playerSprite.setPosition(this.px, this.py);
     this.playerSprite.setAlpha(this.invuln > 0 && Math.floor(this.invuln * 20) % 2 === 0 ? 0.35 : 1);
     this.dirSprite.setPosition(this.px, this.py).setRotation(Math.atan2(this.faceY, this.faceX));
-    this.aura.setPosition(this.px, this.py).setScale(1.7 + Math.sin(this.elapsed * 4) * 0.12);
+    this.aura.setPosition(this.px, this.py).setScale((1.7 + Math.sin(this.elapsed * 4) * 0.12) * texScale());
 
     const view = this.cameras.main.worldView;
     this.bg.setPosition(Math.floor(view.x / 64) * 64 - 128, Math.floor(view.y / 64) * 64 - 128);
@@ -440,8 +443,8 @@ export class GameScene extends Phaser.Scene {
     e.damage = damage;
     e.speed = speed;
     e.radius = def.radius * scale;
-    e.baseScale = scale;
-    e.sprite.setTexture(def.tex).setPosition(x, y).setScale(scale).setRotation(0).setAlpha(1)
+    e.baseScale = scale * texScale();
+    e.sprite.setTexture(def.tex).setPosition(x, y).setScale(e.baseScale).setRotation(0).setAlpha(1)
       .setDepth(e.boss ? 12 : e.elite ? 11 : 10);
     this.restoreTint(e);
     return e;
@@ -809,7 +812,7 @@ export class GameScene extends Phaser.Scene {
     p.t = Math.random() * 10;
     p.age = 0;
     const tex = kind === 'gem' ? this.gemTex(value) : kind;
-    p.sprite.setTexture(tex).setPosition(x, y).setScale(1).setDepth(kind === 'gem' ? 5 : 6);
+    p.sprite.setTexture(tex).setPosition(x, y).setScale(texScale()).setDepth(kind === 'gem' ? 5 : 6);
   }
 
   private gemTex(v: number) {
@@ -854,7 +857,7 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       if (p.kind === 'chest' || p.kind === 'heart' || p.kind === 'magnet') {
-        p.sprite.setPosition(p.x, p.y + Math.sin(p.t * 3) * 3).setScale(1 + Math.sin(p.t * 5) * 0.08);
+        p.sprite.setPosition(p.x, p.y + Math.sin(p.t * 3) * 3).setScale((1 + Math.sin(p.t * 5) * 0.08) * texScale());
       } else {
         p.sprite.setPosition(p.x, p.y);
       }
@@ -1167,7 +1170,7 @@ export class GameScene extends Phaser.Scene {
       em = this.add.particles(0, 0, 'spark', {
         lifespan: { min: 220, max: 520 },
         speed: { min: 50, max: 260 },
-        scale: { start: 1.3, end: 0 },
+        scale: { start: 1.3 * texScale(), end: 0 },
         alpha: { start: 1, end: 0 },
         blendMode: Phaser.BlendModes.ADD,
         tint: color,
@@ -1180,7 +1183,7 @@ export class GameScene extends Phaser.Scene {
 
   addRing(x: number, y: number, radius: number, color: number, dur: number) {
     const f = this.fxPool.get();
-    const s = radius / 110;
+    const s = (radius / 110) * texScale();
     f.life = f.maxLife = dur;
     f.s0 = s * 0.25;
     f.s1 = s;
@@ -1216,7 +1219,7 @@ export class GameScene extends Phaser.Scene {
     if (!n) {
       if (this.numbers.length >= 70) return;
       const text = this.add.text(0, 0, '', {
-        fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff', stroke: '#07060f', strokeThickness: 3,
+        fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: '#ffffff', stroke: '#07060f', strokeThickness: 3, resolution: res(),
       }).setOrigin(0.5).setDepth(50);
       n = { text, life: 0, alive: false };
       this.numbers.push(n);

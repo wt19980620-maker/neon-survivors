@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { generateTextures } from '../game/textures';
+import { res } from '../ui/screen';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -7,7 +8,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    generateTextures(this);
+    generateTextures(this, res());
     this.scene.start('Menu');
   }
 }

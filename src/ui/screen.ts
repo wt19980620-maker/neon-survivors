@@ -1,7 +1,50 @@
+import type Phaser from 'phaser';
+import { loadSave } from '../game/save';
+
 /**
- * Screen helpers for phones: safe-area insets (notches, home indicator) and
- * layout breakpoints shared by every scene.
+ * Screen helpers for phones: render resolution, safe-area insets (notches,
+ * home indicator) and layout breakpoints shared by every scene.
+ *
+ * The canvas is rendered at CSS size × `res()` physical pixels so it stays sharp
+ * on high-DPI phones. Scenes keep laying out in CSS ("logical") pixels: use
+ * `vw`/`vh` instead of `scale.width/height`, and `fitCamera` on UI cameras.
  */
+// beyond 2.5 the fill-rate cost on phones outweighs the sharpness gain; 'smooth' trades more
+const MAX_RES = { high: 2.5, smooth: 1.5 };
+
+let RES = currentDpr();
+
+function currentDpr() {
+  // ?res=2.5 forces a render scale, handy for checking phone-like density on a desktop
+  const forced = Number(new URLSearchParams(window.location.search).get('res'));
+  if (forced > 0) return Math.max(1, Math.min(forced, 3));
+  return Math.max(1, Math.min(window.devicePixelRatio || 1, MAX_RES[loadSave().quality] ?? MAX_RES.high));
+}
+
+/** Physical pixels per logical pixel. */
+export function res() {
+  return RES;
+}
+
+/** Re-read devicePixelRatio (window moved to another monitor, browser zoom). */
+export function updateRes() {
+  RES = currentDpr();
+  return RES;
+}
+
+/** Logical (CSS-pixel) width / height of the game. */
+export function vw(scene: Phaser.Scene) {
+  return scene.scale.width / RES;
+}
+
+export function vh(scene: Phaser.Scene) {
+  return scene.scale.height / RES;
+}
+
+/** Make a screen-space camera map logical pixels 1:1 onto the high-res canvas. */
+export function fitCamera(scene: Phaser.Scene) {
+  scene.cameras.main.setOrigin(0, 0).setZoom(RES);
+}
 export interface Insets {
   top: number;
   right: number;

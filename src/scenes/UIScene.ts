@@ -6,7 +6,7 @@ import { music } from '../game/music';
 import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
-import { canSplit, isShort, safeArea, type Insets } from '../ui/screen';
+import { canSplit, fitCamera, isShort, res, safeArea, vh, vw, type Insets } from '../ui/screen';
 import { charUnlockedBy, type AchievementDef } from '../game/achievements';
 import type { GameScene, RunResult, UpgradeOption } from './GameScene';
 
@@ -87,8 +87,9 @@ export class UIScene extends Phaser.Scene {
   // ================================================================ layout / HUD
 
   private layout() {
-    const w = this.scale.width;
-    const h = this.scale.height;
+    fitCamera(this);
+    const w = vw(this);
+    const h = vh(this);
     const ins = (this.ins = safeArea());
     this.levelText.setPosition(12 + ins.left, 16 + ins.top);
     this.timerText.setPosition(w / 2, 14 + ins.top);
@@ -110,7 +111,7 @@ export class UIScene extends Phaser.Scene {
   update() {
     const gs = this.gs;
     if (!gs.stats) return;
-    const w = this.scale.width;
+    const w = vw(this);
 
     const need = xpToNext(gs.level);
     const ratio = Phaser.Math.Clamp(gs.xp / need, 0, 1);
@@ -181,7 +182,7 @@ export class UIScene extends Phaser.Scene {
     const b = this.bannerText;
     this.tweens.killTweensOf(b);
     const c = color ?? (big ? COLORS.boss : COLORS.coin);
-    const narrow = this.scale.width < 600;
+    const narrow = vw(this) < 600;
     b.setText(text).setFontSize(big ? (narrow ? 28 : 38) : narrow ? 20 : 28).setColor(hex(c));
     glowText(b, c, 16);
     b.setAlpha(0).setScale(0.8);
@@ -202,7 +203,7 @@ export class UIScene extends Phaser.Scene {
       return;
     }
     this.toastBusy = true;
-    const w = this.scale.width;
+    const w = vw(this);
     const tw = Math.min(290, w - 24);
     const th = 64;
     const unlock = charUnlockedBy(a.id);
@@ -259,34 +260,42 @@ export class UIScene extends Phaser.Scene {
     if ((k === 'enter' || k === ' ') && this.primary && this.modalKind !== 'level') this.primary();
   }
 
+  /** Pointer coordinates are in physical canvas pixels; the UI is laid out in logical ones. */
+  private logical(p: Phaser.Input.Pointer) {
+    const r = res();
+    return { x: p.x / r, y: p.y / r };
+  }
+
   private onPointerDown(p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) {
     if (this.modalKind || over.length > 0 || this.joyPointer !== -1) return;
     if (this.gs.state !== 'playing') return;
     this.joyPointer = p.id;
-    this.joyBase = { x: p.x, y: p.y };
+    const { x, y } = this.logical(p);
+    this.joyBase = { x, y };
     inputState.active = true;
     inputState.x = 0;
     inputState.y = 0;
-    this.drawJoy(p.x, p.y);
+    this.drawJoy(x, y);
   }
 
   private onPointerMove(p: Phaser.Input.Pointer) {
     if (p.id !== this.joyPointer) return;
-    let dx = p.x - this.joyBase.x;
-    let dy = p.y - this.joyBase.y;
+    const { x, y } = this.logical(p);
+    let dx = x - this.joyBase.x;
+    let dy = y - this.joyBase.y;
     const d = Math.hypot(dx, dy);
     if (d > JOY_R) {
       // drag the base along so direction changes stay responsive
       this.joyBase.x += (dx / d) * (d - JOY_R);
       this.joyBase.y += (dy / d) * (d - JOY_R);
-      dx = p.x - this.joyBase.x;
-      dy = p.y - this.joyBase.y;
+      dx = x - this.joyBase.x;
+      dy = y - this.joyBase.y;
     }
     const mag = Math.min(1, Math.hypot(dx, dy) / (JOY_R * 0.7));
     const a = Math.atan2(dy, dx);
     inputState.x = d > 4 ? Math.cos(a) * mag : 0;
     inputState.y = d > 4 ? Math.sin(a) * mag : 0;
-    this.drawJoy(p.x, p.y);
+    this.drawJoy(x, y);
   }
 
   private onPointerUp(p: Phaser.Input.Pointer) {
@@ -331,8 +340,8 @@ export class UIScene extends Phaser.Scene {
     this.bannerText.setAlpha(0);
     const rebuild = () => {
       this.modal?.destroy();
-      const w = this.scale.width;
-      const h = this.scale.height;
+      const w = vw(this);
+      const h = vh(this);
       const c = this.add.container(0, 0).setDepth(100);
       c.add(this.add.rectangle(0, 0, w, h, 0x000000, 0.72).setOrigin(0).setInteractive());
       this.modal = c;

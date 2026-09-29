@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS, FONT, hex } from '../game/palette';
 import { sfx } from '../game/audio';
+import { res } from './screen';
 
 export function style(size: number, color: number | string = COLORS.text, bold = false): Phaser.Types.GameObjects.Text.TextStyle {
   return {
@@ -8,11 +9,24 @@ export function style(size: number, color: number | string = COLORS.text, bold =
     fontSize: `${Math.round(size)}px`,
     fontStyle: bold ? 'bold' : 'normal',
     color: typeof color === 'number' ? hex(color) : color,
+    // rasterise glyphs at the canvas' physical density, otherwise text is upscaled and blurry
+    resolution: res(),
   };
 }
 
 export function glowText(t: Phaser.GameObjects.Text, color: number, blur = 14) {
-  return t.setShadow(0, 0, hex(color), blur, true, true);
+  // Phaser sizes the text canvas to the glyphs only, which clips the glow into a visible box.
+  // Pad every side except the one the text is anchored to, so the glyphs don't move
+  // (centred axes get padding on both sides).
+  const p = Math.ceil(blur);
+  t.setPadding({
+    left: t.originX > 0 ? p : 0,
+    right: t.originX < 1 ? p : 0,
+    top: t.originY > 0 ? p : 0,
+    bottom: t.originY < 1 ? p : 0,
+  });
+  // canvas shadowBlur ignores the text's resolution scaling, so compensate here
+  return t.setShadow(0, 0, hex(color), blur * res(), true, true);
 }
 
 export function formatTime(sec: number) {

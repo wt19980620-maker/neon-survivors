@@ -4,22 +4,47 @@ import { CHARACTERS, EVOLUTIONS, type CharId } from './data';
 
 type Draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
 
-function make(scene: Phaser.Scene, key: string, w: number, h: number, draw: Draw) {
+/**
+ * Textures are drawn at TEX× their logical size so sprites stay sharp on the high-res canvas.
+ * Every sprite using them must be scaled by texScale() (= 1 / TEX); UI icons that use
+ * setDisplaySize() are unaffected.
+ */
+let TEX = 1;
+
+export function texScale() {
+  return 1 / TEX;
+}
+
+function make(scene: Phaser.Scene, key: string, w: number, h: number, draw: Draw, pad = 0) {
   if (scene.textures.exists(key)) scene.textures.remove(key);
-  const tex = scene.textures.createCanvas(key, w, h)!;
+  const tex = scene.textures.createCanvas(key, Math.ceil((w + pad * 2) * TEX), Math.ceil((h + pad * 2) * TEX))!;
   const ctx = tex.getContext();
+  ctx.scale(TEX, TEX);
+  ctx.translate(pad, pad);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   draw(ctx, w, h);
   tex.refresh();
 }
 
+/**
+ * Centred world sprite: adds a transparent margin so the neon glow fades out instead of
+ * being clipped into a visible square. Only for origin-centred sprites (not icons shown
+ * with setDisplaySize, not tiles).
+ */
+function sprite(scene: Phaser.Scene, key: string, w: number, h: number, draw: Draw) {
+  make(scene, key, w, h, draw, 12);
+}
+
+/** shadowBlur is in device pixels and ignores the context transform. */
+const blur = (px: number) => px * TEX;
+
 /** Stroke + translucent fill with a neon glow, drawn twice for a stronger halo. */
 function neon(ctx: CanvasRenderingContext2D, color: number, path: () => void, opts: { fill?: number; line?: number; blur?: number } = {}) {
   const c = hex(color);
   ctx.save();
   ctx.shadowColor = c;
-  ctx.shadowBlur = opts.blur ?? 10;
+  ctx.shadowBlur = blur(opts.blur ?? 10);
   ctx.strokeStyle = c;
   ctx.lineWidth = opts.line ?? 2.5;
   ctx.fillStyle = c;
@@ -153,7 +178,7 @@ function iconFrame(ctx: CanvasRenderingContext2D, w: number, h: number, color: n
   ctx.strokeStyle = hex(color);
   ctx.lineWidth = 2;
   ctx.shadowColor = hex(color);
-  ctx.shadowBlur = 6;
+  ctx.shadowBlur = blur(6);
   const r = 9;
   ctx.beginPath();
   ctx.roundRect(3, 3, w - 6, h - 6, r);
@@ -171,13 +196,14 @@ function glyphIcon(scene: Phaser.Scene, key: string, color: number, glyph: strin
     ctx.textBaseline = 'middle';
     ctx.fillStyle = hex(color);
     ctx.shadowColor = hex(color);
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = blur(8);
     ctx.fillText(glyph, w / 2, h / 2 + 1);
     ctx.restore();
   });
 }
 
-export function generateTextures(scene: Phaser.Scene) {
+export function generateTextures(scene: Phaser.Scene, scale = 1) {
+  TEX = scale;
   // --- players: each character has its own colour and silhouette
   const bodies: Record<CharId, (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void> = {
     runner: (ctx, cx, cy) => ctx.arc(cx, cy, 12, 0, Math.PI * 2),
@@ -191,14 +217,14 @@ export function generateTextures(scene: Phaser.Scene) {
     },
   };
   for (const c of CHARACTERS) {
-    make(scene, `player_${c.id}`, 48, 48, (ctx, w, h) => {
+    sprite(scene, `player_${c.id}`, 48, 48, (ctx, w, h) => {
       neon(ctx, c.color, () => bodies[c.id](ctx, w / 2, h / 2), { fill: 0.35, line: 3, blur: 14 });
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
       ctx.arc(w / 2, h / 2, 4.5, 0, Math.PI * 2);
       ctx.fill();
     });
-    make(scene, `player_dir_${c.id}`, 48, 48, (ctx, w, h) => {
+    sprite(scene, `player_dir_${c.id}`, 48, 48, (ctx, w, h) => {
       neon(ctx, c.color, () => {
         ctx.moveTo(w / 2 + 22, h / 2);
         ctx.lineTo(w / 2 + 15, h / 2 - 5);
@@ -209,7 +235,7 @@ export function generateTextures(scene: Phaser.Scene) {
   }
 
   // --- enemies
-  make(scene, 'e_chaser', 40, 40, (ctx, w, h) => {
+  sprite(scene, 'e_chaser', 40, 40, (ctx, w, h) => {
     neon(ctx, COLORS.chaser, () => {
       ctx.moveTo(w / 2 + 13, h / 2);
       ctx.lineTo(w / 2 - 10, h / 2 - 11);
@@ -218,7 +244,7 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.closePath();
     }, { fill: 0.3 });
   });
-  make(scene, 'e_bat', 32, 32, (ctx, w, h) => {
+  sprite(scene, 'e_bat', 32, 32, (ctx, w, h) => {
     neon(ctx, COLORS.bat, () => {
       ctx.moveTo(w / 2 + 9, h / 2);
       ctx.lineTo(w / 2 - 2, h / 2 - 9);
@@ -229,16 +255,16 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.closePath();
     }, { fill: 0.35, line: 2 });
   });
-  make(scene, 'e_brute', 64, 64, (ctx, w, h) => {
+  sprite(scene, 'e_brute', 64, 64, (ctx, w, h) => {
     neon(ctx, COLORS.brute, () => poly(ctx, w / 2, h / 2, 21, 6, Math.PI / 6), { fill: 0.25, line: 3.5, blur: 12 });
     neon(ctx, COLORS.brute, () => poly(ctx, w / 2, h / 2, 9, 6, Math.PI / 6), { fill: 0.6, line: 2 });
   });
-  make(scene, 'e_boss', 128, 128, (ctx, w, h) => {
+  sprite(scene, 'e_boss', 128, 128, (ctx, w, h) => {
     neon(ctx, COLORS.boss, () => star(ctx, w / 2, h / 2, 48, 30, 8), { fill: 0.22, line: 4, blur: 18 });
     neon(ctx, COLORS.boss, () => poly(ctx, w / 2, h / 2, 20, 8, Math.PI / 8), { fill: 0.35, line: 3 });
     neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 7, 0, Math.PI * 2), { fill: 1, line: 1, blur: 12 });
   });
-  make(scene, 'e_spitter', 40, 40, (ctx, w, h) => {
+  sprite(scene, 'e_spitter', 40, 40, (ctx, w, h) => {
     // round body with a forward-facing "nozzle"
     neon(ctx, COLORS.spitter, () => ctx.arc(w / 2 - 2, h / 2, 11, 0, Math.PI * 2), { fill: 0.25, line: 2.5 });
     neon(ctx, COLORS.spitter, () => {
@@ -248,7 +274,7 @@ export function generateTextures(scene: Phaser.Scene) {
     }, { fill: 0, line: 2.5 });
     neon(ctx, 0xffffff, () => ctx.arc(w / 2 + 1, h / 2, 3, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
   });
-  make(scene, 'e_splitter', 48, 48, (ctx, w, h) => {
+  sprite(scene, 'e_splitter', 48, 48, (ctx, w, h) => {
     neon(ctx, COLORS.splitter, () => poly(ctx, w / 2, h / 2, 17, 4, Math.PI / 4), { fill: 0.2, line: 3 });
     neon(ctx, COLORS.splitter, () => {
       ctx.moveTo(w / 2 - 9, h / 2);
@@ -257,26 +283,26 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.lineTo(w / 2, h / 2 + 9);
     }, { fill: 0, line: 2 });
   });
-  make(scene, 'e_splitling', 26, 26, (ctx, w, h) => {
+  sprite(scene, 'e_splitling', 26, 26, (ctx, w, h) => {
     neon(ctx, COLORS.splitter, () => poly(ctx, w / 2, h / 2, 8, 4, Math.PI / 4), { fill: 0.45, line: 2 });
   });
-  make(scene, 'e_bomber', 36, 36, (ctx, w, h) => {
+  sprite(scene, 'e_bomber', 36, 36, (ctx, w, h) => {
     neon(ctx, COLORS.bomber, () => star(ctx, w / 2, h / 2, 13, 7, 8), { fill: 0.35, line: 2 });
     neon(ctx, 0xffffff, () => ctx.arc(w / 2, h / 2, 3.5, 0, Math.PI * 2), { fill: 1, line: 1, blur: 8 });
   });
-  make(scene, 'ebullet', 20, 20, (ctx, w, h) => {
+  sprite(scene, 'ebullet', 20, 20, (ctx, w, h) => {
     neon(ctx, COLORS.enemyBullet, () => ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2), { fill: 0.9, line: 2, blur: 8 });
   });
 
   // --- weapons
-  make(scene, 'bolt', 36, 20, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1));
-  make(scene, 'blade', 36, 40, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1));
-  make(scene, 'disc', 40, 40, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1));
+  sprite(scene, 'bolt', 36, 20, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1));
+  sprite(scene, 'blade', 36, 40, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1));
+  sprite(scene, 'disc', 40, 40, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1));
   make(scene, 'ring', 256, 256, (ctx, w, h) => {
     ctx.save();
     ctx.strokeStyle = '#ffffff';
     ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 16;
+    ctx.shadowBlur = blur(16);
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(w / 2, h / 2, 110, 0, Math.PI * 2);
@@ -295,7 +321,7 @@ export function generateTextures(scene: Phaser.Scene) {
 
   // --- pickups
   const gem = (key: string, color: number, s: number) =>
-    make(scene, key, 24, 28, (ctx, w, h) => {
+    sprite(scene, key, 24, 28, (ctx, w, h) => {
       neon(ctx, color, () => {
         ctx.moveTo(w / 2, h / 2 - 8 * s);
         ctx.lineTo(w / 2 + 5.5 * s, h / 2);
@@ -307,7 +333,7 @@ export function generateTextures(scene: Phaser.Scene) {
   gem('gem1', COLORS.gem1, 0.9);
   gem('gem2', COLORS.gem2, 1.05);
   gem('gem3', COLORS.gem3, 1.25);
-  make(scene, 'heart', 28, 28, (ctx, w, h) => {
+  sprite(scene, 'heart', 28, 28, (ctx, w, h) => {
     neon(ctx, COLORS.heart, () => {
       const x = w / 2, y = h / 2 + 2;
       ctx.moveTo(x, y + 7);
@@ -316,7 +342,7 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.closePath();
     }, { fill: 0.7, line: 2 });
   });
-  make(scene, 'magnet', 30, 30, (ctx, w, h) => {
+  sprite(scene, 'magnet', 30, 30, (ctx, w, h) => {
     neon(ctx, COLORS.magnet, () => {
       ctx.arc(w / 2, h / 2, 8, Math.PI, 0, true);
       ctx.moveTo(w / 2 - 8, h / 2);
@@ -325,7 +351,7 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.lineTo(w / 2 + 8, h / 2 - 8);
     }, { fill: 0, line: 4.5 });
   });
-  make(scene, 'chest', 36, 32, (ctx, w, h) => {
+  sprite(scene, 'chest', 36, 32, (ctx, w, h) => {
     neon(ctx, COLORS.chest, () => ctx.roundRect(5, 8, w - 10, h - 14, 4), { fill: 0.35, line: 2.5, blur: 12 });
     neon(ctx, COLORS.chest, () => {
       ctx.moveTo(5, 15);
@@ -334,7 +360,7 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.lineTo(w / 2, 19);
     }, { fill: 0, line: 2 });
   });
-  make(scene, 'coin', 20, 20, (ctx, w, h) => {
+  sprite(scene, 'coin', 20, 20, (ctx, w, h) => {
     neon(ctx, COLORS.coin, () => ctx.arc(w / 2, h / 2, 5.5, 0, Math.PI * 2), { fill: 0.6, line: 2, blur: 6 });
   });
 
@@ -374,8 +400,8 @@ export function generateTextures(scene: Phaser.Scene) {
   weaponIcon('icon_laser', COLORS.laser, (ctx, cx, cy, s) => shapes.laser(ctx, cx, cy, s));
   weaponIcon('icon_frost', COLORS.frost, (ctx, cx, cy, s) => shapes.frost(ctx, cx, cy, s));
   weaponIcon('icon_mine', COLORS.mine, (ctx, cx, cy, s) => shapes.mine(ctx, cx, cy, s));
-  make(scene, 'mine', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8));
-  make(scene, 'mine_evo', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8, EVOLUTIONS.mine.color));
+  sprite(scene, 'mine', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8));
+  sprite(scene, 'mine_evo', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8, EVOLUTIONS.mine.color));
 
   glyphIcon(scene, 'icon_might', 0xff6b6b, '力');
   glyphIcon(scene, 'icon_haste', 0x7cf8ff, '急');
@@ -395,9 +421,9 @@ export function generateTextures(scene: Phaser.Scene) {
 
   // --- evolved weapons: recoloured world sprites + gold-framed icons with a star badge
   const E = EVOLUTIONS;
-  make(scene, 'bolt_evo', 40, 22, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1.1, E.bolt.color));
-  make(scene, 'blade_evo', 40, 44, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1.1, E.orbit.color));
-  make(scene, 'disc_evo', 44, 44, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1.1, E.disc.color));
+  sprite(scene, 'bolt_evo', 40, 22, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1.1, E.bolt.color));
+  sprite(scene, 'blade_evo', 40, 44, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1.1, E.orbit.color));
+  sprite(scene, 'disc_evo', 44, 44, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1.1, E.disc.color));
   const evoIcon = (key: string, paint: (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void) =>
     make(scene, key, 48, 48, (ctx, w, h) => {
       iconFrame(ctx, w, h, COLORS.elite);
@@ -405,7 +431,7 @@ export function generateTextures(scene: Phaser.Scene) {
       ctx.save();
       ctx.fillStyle = hex(COLORS.elite);
       ctx.shadowColor = hex(COLORS.elite);
-      ctx.shadowBlur = 6;
+      ctx.shadowBlur = blur(6);
       ctx.beginPath();
       star(ctx, w - 11, 11, 7, 3, 5, -Math.PI / 2);
       ctx.fill();
