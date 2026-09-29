@@ -319,6 +319,19 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     assassin: (ctx, cx, cy) => poly(ctx, cx, cy, 14, 4),
     storm: (ctx, cx, cy) => star(ctx, cx, cy, 15, 7, 5, -Math.PI / 2),
     pyro: (ctx, cx, cy) => poly(ctx, cx, cy + 2, 15, 3, -Math.PI / 2),
+    caller: (ctx, cx, cy) => {
+      // little ghost: round head, wavy hem
+      ctx.moveTo(cx - 12, cy + 12);
+      ctx.lineTo(cx - 12, cy - 2);
+      ctx.arc(cx, cy - 2, 12, Math.PI, 0);
+      ctx.lineTo(cx + 12, cy + 12);
+      for (let i = 0; i < 3; i++) {
+        const x0 = cx + 12 - i * 8;
+        ctx.quadraticCurveTo(x0 - 2, cy + 6, x0 - 4, cy + 9);
+        ctx.quadraticCurveTo(x0 - 6, cy + 12, x0 - 8, cy + 12);
+      }
+      ctx.closePath();
+    },
     wind: (ctx, cx, cy) => {
       // three curved blades swirling round the core
       for (let k = 0; k < 3; k++) {

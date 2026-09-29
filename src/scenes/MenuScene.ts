@@ -305,7 +305,9 @@ export class MenuScene extends Phaser.Scene {
         const gap = n > 6 ? 5 : 8;
         // two columns when rows get squashed: at 50px on wide screens, at 42px (too short for two lines) on any
         const perRow = avail / n - gap;
-        const cols = (perRow < 50 && w >= 540) || perRow < 42 ? 2 : 1;
+        let cols = (perRow < 50 && w >= 540) || perRow < 46 ? 2 : 1;
+        // landscape phones with many characters: a third column of stacked cards
+        if (cols === 2 && avail / Math.ceil(n / 2) - gap < 46 && w >= 540) cols = 3;
         const rows = Math.ceil(n / cols);
         cw = Math.min(460, (w - 24 - ins.left - ins.right - gap * (cols - 1)) / cols);
         chh = Math.min(96, avail / rows - gap);
@@ -342,12 +344,24 @@ export class MenuScene extends Phaser.Scene {
         card.add(this.add.image(0, -chh / 2 + 56, `player_${ch.id}`).setScale(2.2 * texScale()).setAlpha(unlocked ? 1 : 0.25));
         if (!unlocked) card.add(this.add.image(0, -chh / 2 + 56, 'icon_lock').setDisplaySize(40, 40));
         card.add(glowText(this.add.text(0, -chh / 2 + 118, ch.name, style(20, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0.5), ch.color, unlocked ? 8 : 0));
-        card.add(this.add.text(0, -chh / 2 + 146, ch.desc, { ...style(13, COLORS.dim), align: 'center', wordWrap: { width: cw - 20, useAdvancedWrap: true } }).setOrigin(0.5, 0));
-        card.add(this.add.image(-cw / 2 + 30, -chh / 2 + 196, weapon.icon).setDisplaySize(26, 26).setAlpha(unlocked ? 1 : 0.4));
-        card.add(this.add.text(-cw / 2 + 50, -chh / 2 + 196, `初始：${weapon.name}`, style(13, unlocked ? COLORS.text : COLORS.dim)).setOrigin(0, 0.5));
-        card.add(this.add.text(0, -chh / 2 + 220, lines.length ? lines.join('\n') : '无属性修正', { ...style(13, unlocked ? COLORS.text : COLORS.dim), align: 'center', lineSpacing: 4 }).setOrigin(0.5, 0));
+        // narrow cards (many characters, smaller windows): smaller text and a wider wrap keep it to two lines
+        const roomy = cw >= 150;
+        card.add(this.add.text(0, -chh / 2 + 146, ch.desc, {
+          ...style(roomy ? 13 : 12, COLORS.dim), align: 'center', wordWrap: { width: cw - (roomy ? 20 : 10), useAdvancedWrap: true },
+        }).setOrigin(0.5, 0));
+        // narrow cards drop the "初始：" prefix (the icon already says it) and hug the left edge
+        const ix = -cw / 2 + (roomy ? 30 : 18);
+        card.add(this.add.image(ix, -chh / 2 + 196, weapon.icon).setDisplaySize(26, 26).setAlpha(unlocked ? 1 : 0.4));
+        card.add(this.add.text(ix + 18, -chh / 2 + 196, roomy ? `初始：${weapon.name}` : weapon.name, style(13, unlocked ? COLORS.text : COLORS.dim)).setOrigin(0, 0.5));
+        // narrow locked cards give the stats' room to the (longer, wrapping) unlock condition
+        if (unlocked || roomy) {
+          card.add(this.add.text(0, -chh / 2 + 220, lines.length ? lines.join('\n') : '无属性修正', { ...style(13, unlocked ? COLORS.text : COLORS.dim), align: 'center', lineSpacing: 4 }).setOrigin(0.5, 0));
+        }
         if (!unlocked && unlockAch) {
-          card.add(this.add.text(0, chh / 2 - 12, `解锁：${unlockAch.desc}`, { ...style(12, COLORS.elite), align: 'center', wordWrap: { width: cw - 16, useAdvancedWrap: true } }).setOrigin(0.5, 1));
+          const cond = roomy ? unlockAch.desc : unlockAch.desc.replace(/ /g, '');
+          card.add(this.add.text(0, roomy ? chh / 2 - 12 : -chh / 2 + 222, `解锁：${cond}`, {
+            ...style(12, COLORS.elite), align: 'center', wordWrap: { width: cw - (roomy ? 16 : 10), useAdvancedWrap: true },
+          }).setOrigin(0.5, roomy ? 1 : 0));
         } else if (selected) {
           card.add(this.add.text(0, chh / 2 - 14, '✓ 已选择', style(14, ch.color, true)).setOrigin(0.5, 1));
         }
@@ -355,16 +369,19 @@ export class MenuScene extends Phaser.Scene {
         // stacked card for two narrow columns on small portrait phones: icon + name on top, details below
         const left = -cw / 2;
         const top = -chh / 2;
-        card.add(this.add.image(left + 20, top + 20, `player_${ch.id}`).setScale(1.0 * texScale()).setAlpha(unlocked ? 1 : 0.25));
-        if (!unlocked) card.add(this.add.image(left + 20, top + 20, 'icon_lock').setDisplaySize(22, 22));
-        card.add(this.add.text(left + 40, top + 20, ch.name, style(15, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0, 0.5));
-        card.add(this.add.image(cw / 2 - 16, top + 20, weapon.icon).setDisplaySize(20, 20).setAlpha(unlocked ? 1 : 0.4));
-        if (selected) card.add(this.add.text(cw / 2 - 30, top + 20, '✓', style(15, ch.color, true)).setOrigin(1, 0.5));
+        // shorter cards pull the header row and details up a little
+        const hy = top + (chh < 70 ? 16 : 20);
+        const dy = top + (chh < 70 ? 30 : 36);
+        card.add(this.add.image(left + 20, hy, `player_${ch.id}`).setScale(1.0 * texScale()).setAlpha(unlocked ? 1 : 0.25));
+        if (!unlocked) card.add(this.add.image(left + 20, hy, 'icon_lock').setDisplaySize(22, 22));
+        card.add(this.add.text(left + 40, hy, ch.name, style(15, unlocked ? ch.color : COLORS.dim, true)).setOrigin(0, 0.5));
+        card.add(this.add.image(cw / 2 - 16, hy, weapon.icon).setDisplaySize(20, 20).setAlpha(unlocked ? 1 : 0.4));
+        if (selected) card.add(this.add.text(cw / 2 - 30, hy, '✓', style(15, ch.color, true)).setOrigin(1, 0.5));
         // two stats per line so a wrap never starts a line with the separator
         const stats = lines.length ? [lines.slice(0, 2).join(' · '), lines.slice(2).join(' · ')].filter(Boolean).join('\n') : '均衡，无属性修正';
         // unlock text without spaces wraps per character instead of breaking oddly at "前 3 / 分钟"
         const sub = !unlocked && unlockAch ? `解锁：${unlockAch.desc.replace(/ /g, '')}` : stats;
-        card.add(this.add.text(left + 10, top + 36, sub, {
+        card.add(this.add.text(left + 10, dy, sub, {
           ...style(11, !unlocked ? COLORS.elite : COLORS.text), wordWrap: { width: cw - 20, useAdvancedWrap: true }, lineSpacing: 1,
         }));
       } else {

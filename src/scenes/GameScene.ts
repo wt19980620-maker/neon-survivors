@@ -1427,7 +1427,7 @@ export class GameScene extends Phaser.Scene {
       might: (1 + L('might') * 0.1 + metaRank('might') * 0.05) * (m.might ?? 1),
       haste: (1 - L('haste') * 0.08) * (m.cooldown ?? 1),
       area: (1 + L('area') * 0.1) * (m.area ?? 1),
-      amount: L('amount'),
+      amount: L('amount') + (m.amount ?? 0),
       armor: L('armor') + (m.armor ?? 0),
       growth: (1 + L('growth') * 0.1 + metaRank('growth') * 0.05) * (m.growth ?? 1),
       greed: 1 + metaRank('greed') * 0.1,

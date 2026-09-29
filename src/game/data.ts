@@ -431,7 +431,7 @@ export const ENDLESS_EVENT_EVERY = 75;
 
 // ---------------------------------------------------------------- characters
 
-export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro' | 'wind';
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro' | 'wind' | 'caller';
 
 /** Multipliers default to 1, additive bonuses to 0. */
 export interface CharMods {
@@ -445,6 +445,8 @@ export interface CharMods {
   regen?: number;
   /** experience gain multiplier */
   growth?: number;
+  /** extra projectiles for every weapon, like levels of 多重 */
+  amount?: number;
 }
 
 export interface CharDef {
@@ -487,6 +489,10 @@ export const CHARACTERS: CharDef[] = [
   {
     id: 'wind', name: '御风者', color: 0xb8fff0, weapon: 'cyclone', desc: '身轻如风，但力量偏弱',
     mods: { speed: 1.1, magnet: 1.3, might: 0.9 }, unlock: 'untouched',
+  },
+  {
+    id: 'caller', name: '唤灵师', color: 0xffb8e8, weapon: 'spirit', desc: '召唤更多，但单体更弱',
+    mods: { amount: 1, might: 0.85, hp: 0.9 }, unlock: 'kills_1k',
   },
 ];
 
@@ -548,5 +554,6 @@ export function charModLines(m: CharMods): string[] {
   if (m.magnet) out.push(`拾取 ${pct(m.magnet)}`);
   if (m.regen) out.push(`回复 +${m.regen}/秒`);
   if (m.growth) out.push(`经验 ${pct(m.growth)}`);
+  if (m.amount) out.push(`数量 +${m.amount}`);
   return out;
 }
