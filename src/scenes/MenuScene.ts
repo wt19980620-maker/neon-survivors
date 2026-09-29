@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { CHARACTERS, ITEMS, MAPS, META_DEFS, charModLines, metaCost, type CharId } from '../game/data';
+import { CHAR_BY_ID, CHARACTERS, ITEMS, MAPS, MAP_BY_ID, META_DEFS, charModLines, metaCost, type CharId, type GameMode } from '../game/data';
 import { buildSettings } from '../ui/settings';
+import { askFriendGroup, askNickname, fetchBoard, leaderboardEnabled, playerId, type ScoreRow } from '../game/leaderboard';
 import { COLORS } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
@@ -19,7 +20,7 @@ interface Drifter {
   spin: number;
 }
 
-type OverlayKind = 'shop' | 'chars' | 'achievements' | 'settings';
+type OverlayKind = 'shop' | 'chars' | 'achievements' | 'settings' | 'leaderboard';
 
 export class MenuScene extends Phaser.Scene {
   private bg!: Phaser.GameObjects.TileSprite;
@@ -28,6 +29,12 @@ export class MenuScene extends Phaser.Scene {
   private overlay: Phaser.GameObjects.Container | null = null;
   private overlayKind: OverlayKind | null = null;
   private achPage = 0;
+  // leaderboard view state
+  private boardMode: GameMode = 'endless';
+  private boardScope: 'global' | 'group' = 'global';
+  private boardRows: ScoreRow[] | null = null;
+  private boardError = false;
+  private boardReq = 0;
   private mapIndex = 0;
   private notice = '';
 
@@ -119,12 +126,14 @@ export class MenuScene extends Phaser.Scene {
       c.add(makeButton(this, w / 2, by, 240, 48, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 22));
       c.add(makeButton(this, w / 2 - 86, by + 56, 164, 40, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 17));
       c.add(makeButton(this, w / 2 + 86, by + 56, 164, 40, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 17));
-      c.add(makeButton(this, w / 2, by + 104, 164, 34, '设置', () => this.openOverlay('settings'), COLORS.dim, 16));
+      c.add(makeButton(this, w / 2 - 86, by + 104, 164, 34, '排行榜', () => this.openBoard(), COLORS.player, 16));
+      c.add(makeButton(this, w / 2 + 86, by + 104, 164, 34, '设置', () => this.openOverlay('settings'), COLORS.dim, 16));
     } else {
       by = h * 0.5;
       c.add(makeButton(this, w / 2, by, 240, 54, '开始游戏', () => this.openOverlay('chars'), COLORS.player, 24));
-      c.add(makeButton(this, w / 2, by + 66, 240, 44, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 19));
-      c.add(makeButton(this, w / 2, by + 120, 240, 44, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 19));
+      c.add(makeButton(this, w / 2 - 61, by + 66, 118, 44, '局外强化', () => this.openOverlay('shop'), COLORS.coin, 17));
+      c.add(makeButton(this, w / 2 + 61, by + 66, 118, 44, achLabel, () => this.openOverlay('achievements'), COLORS.elite, 17));
+      c.add(makeButton(this, w / 2, by + 120, 240, 44, '排行榜', () => this.openBoard(), COLORS.player, 19));
       c.add(makeButton(this, w / 2, by + 170, 240, 38, '设置', () => this.openOverlay('settings'), COLORS.dim, 17));
     }
 
@@ -222,6 +231,7 @@ export class MenuScene extends Phaser.Scene {
     if (kind === 'shop') this.buildShop(c, w, h);
     else if (kind === 'chars') this.buildChars(c, w, h);
     else if (kind === 'achievements') this.buildAchievements(c, w, h);
+    else if (kind === 'leaderboard') this.buildLeaderboard(c, w, h);
     else {
       buildSettings(this, c, w, h, {
         allowQuality: true,
@@ -428,6 +438,116 @@ export class MenuScene extends Phaser.Scene {
       c.add([prev, next]);
     }
     c.add(makeButton(this, w / 2, by, pages > 1 ? Math.min(140, off * 2 - 110) : 140, short ? 36 : 40, '返回', () => this.closeOverlay(), COLORS.player, 18));
+  }
+
+  // ---------------------------------------------------------------- leaderboard
+
+  private openBoard() {
+    this.boardMode = loadSave().selectedMode;
+    this.openOverlay('leaderboard');
+    this.loadBoard();
+  }
+
+  /** Fetch the current tab; stale responses (tab switched meanwhile) are dropped. */
+  private loadBoard() {
+    const group = loadSave().friendGroup;
+    this.boardRows = null;
+    this.boardError = false;
+    if (!leaderboardEnabled() || (this.boardScope === 'group' && !group)) return;
+    const req = ++this.boardReq;
+    fetchBoard(this.boardMode, this.boardScope === 'group' ? group : '')
+      .then((rows) => {
+        if (req !== this.boardReq) return;
+        this.boardRows = rows;
+      })
+      .catch(() => {
+        if (req !== this.boardReq) return;
+        this.boardError = true;
+      })
+      .finally(() => {
+        if (req === this.boardReq && this.overlayKind === 'leaderboard') this.openOverlay('leaderboard');
+      });
+  }
+
+  private buildLeaderboard(c: Phaser.GameObjects.Container, w: number, h: number) {
+    const save = loadSave();
+    const ins = safeArea();
+    const short = isShort(h);
+    const pw = Math.min(560, w - 24 - ins.left - ins.right);
+    const ph = Math.min(h - 16 - ins.top - ins.bottom, 620);
+    const top = h / 2 - ph / 2;
+    const left = w / 2 - pw / 2 + 18;
+    const right = w / 2 + pw / 2 - 18;
+    c.add(panel(this, w / 2, h / 2, pw, ph, COLORS.player));
+    c.add(glowText(this.add.text(w / 2, top + (short ? 22 : 30), '排行榜', style(short ? 24 : 30, COLORS.player, true)).setOrigin(0.5), COLORS.player, 12));
+
+    // tabs: mode + scope
+    const tabY = top + (short ? 52 : 70);
+    const tw = Math.min(96, (pw - 60) / 4);
+    const tab = (x: number, label: string, on: boolean, tap: () => void) => {
+      c.add(makeButton(this, x, tabY, tw, 30, label, () => {
+        tap();
+        this.openOverlay('leaderboard');
+        this.loadBoard();
+      }, on ? COLORS.player : COLORS.dim, 14));
+      if (on) c.add(this.add.rectangle(x, tabY + 17, tw - 16, 2, COLORS.player, 1));
+    };
+    const g = tw + 6;
+    tab(w / 2 - g * 1.5 - 8, '无尽', this.boardMode === 'endless', () => { this.boardMode = 'endless'; });
+    tab(w / 2 - g * 0.5 - 8, '标准', this.boardMode === 'standard', () => { this.boardMode = 'standard'; });
+    tab(w / 2 + g * 0.5 + 8, '全球', this.boardScope === 'global', () => { this.boardScope = 'global'; });
+    tab(w / 2 + g * 1.5 + 8, '好友圈', this.boardScope === 'group', () => { this.boardScope = 'group'; });
+
+    // footer: nickname / friend group / back (two rows on narrow panels)
+    const narrow = pw < 420;
+    const fy = top + ph - (narrow ? 70 : 30);
+    const fw = narrow ? (pw - 48) / 2 : 150;
+    c.add(makeButton(this, narrow ? w / 2 - fw / 2 - 6 : left + fw / 2, fy, fw, 32, `昵称：${save.nickname || '未设置'}`, () => {
+      if (askNickname()) this.openOverlay('leaderboard');
+    }, save.nickname ? COLORS.dim : COLORS.elite, 13));
+    c.add(makeButton(this, narrow ? w / 2 + fw / 2 + 6 : left + fw * 1.5 + 12, fy, fw, 32, `好友圈：${save.friendGroup || '未加入'}`, () => {
+      if (askFriendGroup() !== null) {
+        this.openOverlay('leaderboard');
+        this.loadBoard();
+      }
+    }, COLORS.dim, 13));
+    c.add(makeButton(this, narrow ? w / 2 : right - 50, narrow ? fy + 40 : fy, narrow ? 140 : 100, 32, '返回', () => this.closeOverlay(), COLORS.player, 15));
+
+    // list
+    const listTop = tabY + 30;
+    const listBottom = fy - (narrow ? 26 : 26);
+    const rowH = short ? 22 : 26;
+    const message = (text: string) => c.add(this.add.text(w / 2, (listTop + listBottom) / 2, text, {
+      ...style(14, COLORS.dim), align: 'center', wordWrap: { width: pw - 40, useAdvancedWrap: true },
+    }).setOrigin(0.5));
+    if (!leaderboardEnabled()) return message('在线排行榜尚未配置');
+    if (this.boardScope === 'group' && !save.friendGroup) return message('还没有加入好友圈\n点下方「好友圈」输入一个代码，把同一个代码发给朋友即可');
+    if (this.boardError) return message('加载失败，请检查网络后重新切换标签');
+    if (!this.boardRows) return message('加载中…');
+    if (this.boardRows.length === 0) return message('还没有人上榜，来做第一个吧！');
+
+    const me = playerId();
+    const maxRows = Math.max(1, Math.floor((listBottom - listTop - rowH) / rowH));
+    const cols = { rank: left + 16, name: left + 40, detail: right - 110, score: right };
+    const head = listTop + rowH / 2;
+    c.add(this.add.text(cols.name, head, '玩家', style(12, COLORS.dim)).setOrigin(0, 0.5));
+    if (pw >= 380) c.add(this.add.text(cols.detail, head, '存活 · 地图', style(12, COLORS.dim)).setOrigin(1, 0.5));
+    c.add(this.add.text(cols.score, head, '得分', style(12, COLORS.dim)).setOrigin(1, 0.5));
+    const medal = [COLORS.elite, 0xd6e2ff, 0xffa36b];
+    this.boardRows.slice(0, maxRows).forEach((r, i) => {
+      const y = head + (i + 1) * rowH;
+      const mine = r.player_id === me;
+      if (mine) c.add(this.add.rectangle(w / 2, y, pw - 20, rowH - 2, COLORS.player, 0.12));
+      const color = mine ? COLORS.player : i < 3 ? medal[i] : COLORS.text;
+      c.add(this.add.text(cols.rank, y, String(i + 1), style(13, i < 3 ? medal[i] : COLORS.dim, true)).setOrigin(0.5));
+      const charName = CHAR_BY_ID[r.char]?.name ?? '';
+      c.add(this.add.text(cols.name, y, pw >= 380 ? `${r.name}  ·  ${charName}` : r.name, style(13, color, i < 3 || mine)).setOrigin(0, 0.5));
+      if (pw >= 380) {
+        const detail = `${formatTime(r.time_s)}${r.win ? ' ★' : ''}  ·  ${MAP_BY_ID[r.map]?.name ?? ''}`;
+        c.add(this.add.text(cols.detail, y, detail, style(12, COLORS.dim)).setOrigin(1, 0.5));
+      }
+      c.add(this.add.text(cols.score, y, r.score.toLocaleString(), style(13, color, true)).setOrigin(1, 0.5));
+    });
   }
 
   // ---------------------------------------------------------------- shop

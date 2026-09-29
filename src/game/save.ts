@@ -32,6 +32,12 @@ export interface SaveData {
   damageNumbers: boolean;
   selectedMap: MapId;
   selectedMode: GameMode;
+  /** leaderboard nickname; empty until the player picks one */
+  nickname: string;
+  /** anonymous id so the board keeps one best run per player */
+  playerId: string;
+  /** optional code shared with friends for a private board */
+  friendGroup: string;
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -53,6 +59,9 @@ function defaults(): SaveData {
     damageNumbers: true,
     selectedMap: 'grid',
     selectedMode: 'standard',
+    nickname: '',
+    playerId: '',
+    friendGroup: '',
   };
 }
 

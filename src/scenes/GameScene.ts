@@ -17,6 +17,7 @@ import {
 import { createWeapon, type Weapon } from '../game/weapons';
 import { Director } from '../game/director';
 import { ObstacleField } from '../game/obstacles';
+import type { RunScore } from '../game/leaderboard';
 import { inputState } from '../game/input';
 import { res, vh, vibrate, vw } from '../ui/screen';
 import { texScale } from '../game/textures';
@@ -66,6 +67,8 @@ export interface RunResult {
   newBest: boolean;
   damage: { id: WeaponId; value: number; evolved: boolean }[];
   achievements: AchievementDef[];
+  /** what gets uploaded to the online leaderboard */
+  board: RunScore;
 }
 
 type ModalKind = 'level' | 'chest';
@@ -1209,6 +1212,7 @@ export class GameScene extends Phaser.Scene {
       win: this.endWin, mode: this.mode, bossWave: this.director.bossWave, time: this.elapsed, level: this.level, kills: this.kills,
       gold: settled.gold, totalGold: loadSave().gold, newBest: settled.newBest, damage,
       achievements: this.runAchievements,
+      board: { mode: this.mode, map: this.mapDef.id, char: this.charId, time: this.elapsed, kills: this.kills, level: this.level, win: this.endWin },
     });
   }
 

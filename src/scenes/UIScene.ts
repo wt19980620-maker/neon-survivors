@@ -7,6 +7,7 @@ import { inputState } from '../game/input';
 import { loadSave, writeSave } from '../game/save';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
 import { buildSettings } from '../ui/settings';
+import { askNickname, computeScore, leaderboardEnabled, submitScore, type SubmitResult } from '../game/leaderboard';
 import { canSplit, fitCamera, isShort, res, safeArea, vh, vw, type Insets } from '../ui/screen';
 import { unlockLabel, type AchievementDef } from '../game/achievements';
 import type { GameScene, RunResult, UpgradeOption } from './GameScene';
@@ -42,6 +43,8 @@ export class UIScene extends Phaser.Scene {
   private toastQueue: AchievementDef[] = [];
   private ins: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
   private toastBusy = false;
+  /** online leaderboard upload for the run on the results screen */
+  private upload: SubmitResult | 'uploading' | null = null;
 
   constructor() {
     super('UI');
@@ -640,12 +643,14 @@ export class UIScene extends Phaser.Scene {
       const dmgRight = split ? w / 2 + pw / 2 - 24 : w / 2 + pw / 2 - 40;
       const dmgTop = split ? top + 22 : top + 242 + achH;
       const dmgRow = split ? 30 : 34;
-      const btnSpace = split ? 64 : 0;
+      // leave a row above the buttons for the leaderboard upload status
+      const boardRow = leaderboardEnabled() ? 40 : 0;
+      const btnSpace = (split ? 64 : 0) + boardRow;
       c.add(this.add.text(dmgLeft, dmgTop, '武器伤害', style(14, COLORS.dim)));
       const maxDmg = Math.max(1, ...r.damage.map((d) => d.value));
       const maxRows = split
         ? Math.floor((ph - (dmgTop - top) - 40 - btnSpace) / dmgRow)
-        : Math.floor((ph - 360 - achH) / dmgRow);
+        : Math.floor((ph - 360 - achH - boardRow) / dmgRow);
       r.damage.slice(0, Math.max(1, maxRows)).forEach((d, i) => {
         const y = dmgTop + 36 + i * dmgRow;
         const def = d.evolved ? EVOLUTIONS[d.id] : ITEMS[d.id];
@@ -662,8 +667,36 @@ export class UIScene extends Phaser.Scene {
       const by = top + ph - (split ? 34 : 42);
       c.add(makeButton(this, w / 2 - bw / 2 - 10, by, bw, 42, '再来一局', () => this.primary?.(), COLORS.player));
       c.add(makeButton(this, w / 2 + bw / 2 + 10, by, bw, 42, '返回菜单', () => this.toMenu(), COLORS.dim));
+      if (boardRow) this.uploadRow(c, w / 2, by - 44, r);
     });
     this.primary = () => this.retry();
+    this.upload = null;
+    this.startUpload(r);
+  }
+
+  private startUpload(r: RunResult) {
+    if (!leaderboardEnabled()) return;
+    this.upload = 'uploading';
+    this.rebuildModal?.();
+    void submitScore(r.board).then((res) => {
+      this.upload = res;
+      if (this.modalKind === 'result') this.rebuildModal?.();
+    });
+  }
+
+  /** Status line (or a nickname / retry button) above the results buttons. */
+  private uploadRow(c: Phaser.GameObjects.Container, x: number, y: number, r: RunResult) {
+    const s = this.upload;
+    if (s === 'no-name' || s === 'error') {
+      const label = s === 'no-name' ? '设置昵称并上传到排行榜' : '上传失败，点击重试';
+      c.add(makeButton(this, x, y, 220, 32, label, () => {
+        if (s === 'no-name' && !askNickname()) return;
+        this.startUpload(r);
+      }, s === 'no-name' ? COLORS.elite : COLORS.hp, 14));
+      return;
+    }
+    const text = s === 'uploading' ? '正在上传成绩…' : s === 'ok' ? `✓ 已上传 · 得分 ${computeScore(r.board).toLocaleString()}` : '';
+    if (text) c.add(this.add.text(x, y, text, style(14, s === 'ok' ? COLORS.elite : COLORS.dim, s === 'ok')).setOrigin(0.5));
   }
 
   private retry() {
