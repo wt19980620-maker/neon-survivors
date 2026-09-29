@@ -1,6 +1,8 @@
 import { COLORS } from './palette';
 
-export type WeaponId = 'bolt' | 'orbit' | 'nova' | 'chain' | 'disc' | 'laser' | 'frost' | 'mine';
+export type WeaponId =
+  | 'bolt' | 'orbit' | 'nova' | 'chain' | 'disc' | 'laser' | 'frost' | 'mine'
+  | 'fireball' | 'meteor' | 'cyclone' | 'spirit';
 export type PassiveId =
   | 'might'
   | 'haste'
@@ -16,8 +18,10 @@ export type ItemId = WeaponId | PassiveId;
 /**
  * Generic per-level weapon numbers. Each weapon interprets `extra` differently:
  * orbit = orbit radius, nova = blast radius, chain = jump range, disc = throw range,
- * laser = beam length, frost = aura radius, mine = blast radius.
- * laser uses speed as beam duration, frost uses it as slow strength (0..1).
+ * laser = beam length, frost = aura radius, mine = blast radius, fireball = blast radius,
+ * meteor = impact radius, cyclone = vortex radius, spirit = seek range.
+ * laser uses speed as beam duration, frost uses it as slow strength (0..1),
+ * meteor as fall time, cyclone as lifetime (evolved: orbit speed), spirit as dash speed.
  */
 export interface WeaponStats {
   damage: number;
@@ -80,6 +84,22 @@ export const WEAPON_LEVELS: Record<WeaponId, WeaponStats[]> = {
     { damage: 30, cooldown: 1.6, count: 1, pierce: 0, area: 1, speed: 0, extra: 70, knockback: 260 },
     [{ count: 2 }, { damage: 45 }, { extra: 90, cooldown: 1.3 }, { count: 3, damage: 60 }],
   ),
+  fireball: levels(
+    { damage: 18, cooldown: 1.4, count: 1, pierce: 0, area: 1, speed: 330, extra: 55, knockback: 120 },
+    [{ count: 2 }, { damage: 26, extra: 65 }, { count: 3 }, { damage: 36, cooldown: 1.15, extra: 75 }],
+  ),
+  meteor: levels(
+    { damage: 34, cooldown: 3.2, count: 1, pierce: 0, area: 1, speed: 0.8, extra: 80, knockback: 250 },
+    [{ count: 2 }, { damage: 50 }, { extra: 100, cooldown: 2.7 }, { count: 3, damage: 65 }],
+  ),
+  cyclone: levels(
+    { damage: 7, cooldown: 4, count: 1, pierce: 0, area: 1, speed: 3, extra: 44, knockback: 0 },
+    [{ damage: 10 }, { count: 2 }, { extra: 56, speed: 3.8 }, { damage: 14, count: 3 }],
+  ),
+  spirit: levels(
+    { damage: 14, cooldown: 1.0, count: 2, pierce: 0, area: 1, speed: 520, extra: 320, knockback: 60 },
+    [{ damage: 18 }, { count: 3 }, { damage: 22, cooldown: 0.8 }, { count: 4, damage: 26 }],
+  ),
 };
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -114,6 +134,22 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   mine: {
     id: 'mine', kind: 'weapon', name: '地雷', icon: 'icon_mine', color: COLORS.mine, maxLevel: 5,
     desc: ['在脚下布雷，敌人踩到即爆炸', '每次布雷 +1', '伤害 +15', '爆炸范围扩大，布雷更快', '布雷 +1，伤害 +15'],
+  },
+  fireball: {
+    id: 'fireball', kind: 'weapon', name: '火球术', icon: 'icon_fireball', color: COLORS.fireball, maxLevel: 5,
+    desc: ['向敌人投掷火球，命中后爆炸', '火球 +1', '伤害 +8，爆炸范围扩大', '火球 +1', '伤害 +10，冷却缩短，范围扩大'],
+  },
+  meteor: {
+    id: 'meteor', kind: 'weapon', name: '陨石', icon: 'icon_meteor', color: COLORS.meteor, maxLevel: 5,
+    desc: ['召唤陨石砸向敌群，造成大范围伤害', '陨石 +1', '伤害 +16', '冲击范围扩大，冷却缩短', '陨石 +1，伤害 +15'],
+  },
+  cyclone: {
+    id: 'cyclone', kind: 'weapon', name: '旋风', icon: 'icon_cyclone', color: COLORS.cyclone, maxLevel: 5,
+    desc: ['放出游走的旋风，卷住敌人持续伤害', '伤害提升', '旋风 +1', '旋风更大，持续更久', '伤害提升，旋风 +1'],
+  },
+  spirit: {
+    id: 'spirit', kind: 'weapon', name: '灵体', icon: 'icon_spirit', color: COLORS.spirit, maxLevel: 5,
+    desc: ['召唤两个灵体，自动冲向附近的敌人', '伤害 +4', '灵体 +1', '伤害 +4，攻击更频繁', '灵体 +1，伤害 +4'],
   },
   might: {
     id: 'might', kind: 'passive', name: '力量', icon: 'icon_might', color: 0xff6b6b, maxLevel: 5,
@@ -207,14 +243,35 @@ export const EVOLUTIONS: Record<WeaponId, EvolutionDef> = {
     desc: '地雷吸引周围敌人，爆炸会连锁引爆',
     stats: { damage: 90, cooldown: 1.1, count: 3, pierce: 0, area: 1, speed: 0, extra: 120, knockback: 300 },
   },
+  fireball: {
+    weapon: 'fireball', passive: 'might', name: '炼狱火球', icon: 'icon_evo_fireball', color: 0xffd23d,
+    desc: '巨大火球，爆炸后留下持续灼烧的火海',
+    stats: { damage: 42, cooldown: 1.0, count: 4, pierce: 0, area: 1.1, speed: 380, extra: 85, knockback: 150 },
+  },
+  meteor: {
+    weapon: 'meteor', passive: 'growth', name: '天降灾星', icon: 'icon_evo_meteor', color: 0xff9ad0,
+    desc: '陨石雨倾泻而下，每次撞击再迸出一圈余波',
+    stats: { damage: 75, cooldown: 2.5, count: 4, pierce: 0, area: 1, speed: 0.7, extra: 120, knockback: 300 },
+  },
+  cyclone: {
+    weapon: 'cyclone', passive: 'speed', name: '风暴之眼', icon: 'icon_evo_cyclone', color: 0xe6fff8,
+    desc: '两道巨型龙卷常驻身边环绕，把敌人卷入撕碎',
+    stats: { damage: 16, cooldown: 0.3, count: 2, pierce: 0, area: 1, speed: 1.1, extra: 70, knockback: 0 },
+  },
+  spirit: {
+    weapon: 'spirit', passive: 'amount', name: '灵魂军团', icon: 'icon_evo_spirit', color: 0xfff27a,
+    desc: '六个灵体高速突袭，每次命中都会爆裂',
+    stats: { damage: 34, cooldown: 0.55, count: 6, pierce: 0, area: 1, speed: 640, extra: 380, knockback: 80 },
+  },
 };
 
-/** passive id -> weapon it evolves */
-export const EVOLVES_WEAPON: Partial<Record<PassiveId, WeaponId>> = Object.fromEntries(
-  Object.values(EVOLUTIONS).map((e) => [e.passive, e.weapon]),
-);
+/** passive id -> weapons it evolves (a passive can serve more than one recipe) */
+export const EVOLVES_WEAPONS: Partial<Record<PassiveId, WeaponId[]>> = {};
+for (const e of Object.values(EVOLUTIONS)) (EVOLVES_WEAPONS[e.passive] ??= []).push(e.weapon);
 
-export const WEAPON_IDS: WeaponId[] = ['bolt', 'orbit', 'nova', 'chain', 'disc', 'laser', 'frost', 'mine'];
+export const WEAPON_IDS: WeaponId[] = [
+  'bolt', 'orbit', 'nova', 'chain', 'disc', 'laser', 'frost', 'mine', 'fireball', 'meteor', 'cyclone', 'spirit',
+];
 export const PASSIVE_IDS: PassiveId[] = ['might', 'haste', 'area', 'amount', 'speed', 'magnet', 'armor', 'vitality', 'growth'];
 
 export const MAX_WEAPONS = 4;

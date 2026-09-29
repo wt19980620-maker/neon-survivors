@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  AFFIXES, AFFIX_TUNING, BOSSES, CHAMPION, CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPON, ITEMS, MAX_PASSIVES, MAX_WEAPONS,
+  AFFIXES, AFFIX_TUNING, BOSSES, CHAMPION, CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPONS, ITEMS, MAX_PASSIVES, MAX_WEAPONS,
   PASSIVE_IDS, WEAPON_IDS, xpToNext,
   type AffixId, type BossId, type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
@@ -1339,8 +1339,8 @@ export class GameScene extends Phaser.Scene {
     for (const id of PASSIVE_IDS) {
       const lvl = this.itemLevels.get(id) ?? 0;
       // passives that unlock an evolution for a weapon we own show up a bit more often
-      const pairs = EVOLVES_WEAPON[id];
-      const bias = lvl === 0 && pairs && this.itemLevels.has(pairs) ? 1.6 : 1;
+      const pairs = EVOLVES_WEAPONS[id] ?? [];
+      const bias = lvl === 0 && pairs.some((w) => this.itemLevels.has(w)) ? 1.6 : 1;
       if (lvl > 0 && lvl < ITEMS[id].maxLevel) pool.push({ id, w: 2 });
       else if (lvl === 0 && passivesOwned < MAX_PASSIVES) pool.push({ id, w: 1.4 * bias });
     }
@@ -1359,7 +1359,11 @@ export class GameScene extends Phaser.Scene {
       const lvl = this.itemLevels.get(id) ?? 0;
       let hint: string | undefined;
       if (def.kind === 'weapon') hint = `进化：满级 + ${ITEMS[EVOLUTIONS[id as WeaponId].passive].name}`;
-      else if (EVOLVES_WEAPON[id as PassiveId]) hint = `可使「${ITEMS[EVOLVES_WEAPON[id as PassiveId]!].name}」进化`;
+      else {
+        // name the weapons we own first, since those are the recipes that matter this run
+        const pairs = [...(EVOLVES_WEAPONS[id as PassiveId] ?? [])].sort((a, b) => +this.itemLevels.has(b) - +this.itemLevels.has(a));
+        if (pairs.length) hint = `可使${pairs.map((w) => `「${ITEMS[w].name}」`).join('')}进化`;
+      }
       out.push({
         id,
         name: def.name,

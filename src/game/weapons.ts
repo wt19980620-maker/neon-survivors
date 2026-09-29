@@ -747,6 +747,493 @@ class MineWeapon extends Weapon {
   }
 }
 
+// ------------------------------------------------------------------ 火球术 / 炼狱火球
+
+interface Fireball extends Pooled {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+}
+
+/** evolved: burning ground left behind by each blast */
+interface Flame extends Pooled {
+  x: number;
+  y: number;
+  r: number;
+  life: number;
+  tick: number;
+  damage: number;
+}
+
+class FireballWeapon extends Weapon {
+  private pool: Pool<Fireball>;
+  private flames: Pool<Flame>;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('fireball', g);
+    this.pool = new Pool<Fireball>(() => ({
+      alive: false,
+      sprite: g.add.image(0, 0, 'fireball').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD),
+      x: 0, y: 0, vx: 0, vy: 0, life: 0,
+    }));
+    this.flames = new Pool<Flame>(() => ({
+      alive: false,
+      sprite: g.add.image(0, 0, 'glow').setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setTint(EVOLUTIONS.fireball.color),
+      x: 0, y: 0, r: 0, life: 0, tick: 0, damage: 0,
+    }));
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      const n = s.count + g.stats.amount;
+      const targets = g.nearestEnemies(g.px, g.py, 600, n);
+      if (targets.length === 0) {
+        this.timer = 0.1;
+      } else {
+        this.timer = this.cooldown();
+        for (let i = 0; i < n; i++) {
+          const t = targets[i % targets.length];
+          // doubled-up throws fan out so they don't all land on one enemy
+          const spread = i >= targets.length ? (Math.random() - 0.5) * 0.9 : 0;
+          this.throw(Math.atan2(t.y - g.py, t.x - g.px) + spread);
+        }
+        sfx.play('shoot');
+      }
+    }
+
+    const hitR = 11 * this.area() * (this.evolved ? 1.3 : 1);
+    for (const f of this.pool.active) {
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.life -= dt;
+      f.sprite.setPosition(f.x, f.y);
+      this.tmp.length = 0;
+      if (f.life <= 0 || g.queryEnemies(f.x, f.y, hitR, this.tmp).length > 0) {
+        f.alive = false;
+        this.explode(f.x, f.y);
+      }
+    }
+    this.pool.compact();
+
+    for (const fl of this.flames.active) {
+      fl.life -= dt;
+      if (fl.life <= 0) {
+        fl.alive = false;
+        continue;
+      }
+      fl.sprite.setAlpha(Math.min(1, fl.life / 0.5) * (0.4 + Math.random() * 0.12));
+      fl.tick -= dt;
+      if (fl.tick <= 0) {
+        fl.tick = 0.4;
+        this.tmp.length = 0;
+        for (const e of g.queryEnemies(fl.x, fl.y, fl.r, this.tmp)) g.damageEnemy(e, fl.damage, 'fireball', 0, 0, 0);
+      }
+    }
+    this.flames.compact();
+  }
+
+  private throw(ang: number) {
+    const g = this.g;
+    const f = this.pool.get();
+    f.x = g.px;
+    f.y = g.py;
+    f.vx = Math.cos(ang) * this.s.speed;
+    f.vy = Math.sin(ang) * this.s.speed;
+    f.life = 1.9;
+    f.sprite.setTexture(this.evolved ? 'fireball_evo' : 'fireball').setPosition(f.x, f.y).setRotation(ang)
+      .setScale(this.area() * texScale());
+  }
+
+  private explode(x: number, y: number) {
+    const g = this.g;
+    const r = this.s.extra * this.area();
+    const dmg = this.damage();
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(x, y, r, this.tmp)) {
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const len = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, dmg, 'fireball', dx / len, dy / len, this.s.knockback);
+    }
+    const color = this.evolved ? EVOLUTIONS.fireball.color : COLORS.fireball;
+    g.addRing(x, y, r, color, 0.3);
+    g.burst(x, y, color, 10);
+    sfx.play('boom');
+    if (this.evolved) {
+      const fl = this.flames.get();
+      fl.x = x;
+      fl.y = y;
+      fl.r = r * 0.8;
+      fl.life = 2.5;
+      fl.tick = 0.2;
+      fl.damage = dmg * 0.2;
+      fl.sprite.setPosition(x, y).setScale((fl.r / 26) * texScale());
+    }
+  }
+
+  destroy() {
+    this.pool.releaseAll();
+    this.flames.releaseAll();
+  }
+}
+
+// ------------------------------------------------------------------ 陨石 / 天降灾星
+
+interface Strike extends Pooled {
+  x: number;
+  y: number;
+  t: number;
+  maxT: number;
+  r: number;
+  damage: number;
+  /** evolved aftershock: no rock, no marker, just a small blast */
+  after: boolean;
+  marker: Phaser.GameObjects.Image;
+}
+
+class MeteorWeapon extends Weapon {
+  private pool: Pool<Strike>;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('meteor', g);
+    this.pool = new Pool<Strike>(() => ({
+      alive: false,
+      sprite: g.add.image(0, 0, 'meteor_rock').setDepth(DEPTH_PROJ + 1).setBlendMode(Phaser.BlendModes.ADD),
+      marker: g.add.image(0, 0, 'ring').setDepth(4).setBlendMode(Phaser.BlendModes.ADD),
+      x: 0, y: 0, t: 0, maxT: 1, r: 0, damage: 0, after: false,
+    }));
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      this.tmp.length = 0;
+      const pool = g.queryEnemies(g.px, g.py, 450, this.tmp).slice();
+      if (pool.length === 0) {
+        this.timer = 0.2;
+      } else {
+        this.timer = this.cooldown();
+        const n = s.count + g.stats.amount;
+        for (let i = 0; i < n; i++) {
+          // random targets spread the shower over the crowd; staggered so they rain rather than land at once
+          const e = pool.length ? pool.splice(Math.floor(Math.random() * pool.length), 1)[0] : null;
+          const a = Math.random() * TAU;
+          const x = e ? e.x : g.px + Math.cos(a) * 200;
+          const y = e ? e.y : g.py + Math.sin(a) * 200;
+          this.drop(x, y, s.speed + i * 0.12, s.extra * this.area(), this.damage(), false);
+        }
+      }
+    }
+
+    const color = this.evolved ? EVOLUTIONS.meteor.color : COLORS.meteor;
+    const k0 = texScale();
+    for (const m of this.pool.active) {
+      if (!m.alive) continue;
+      m.t -= dt;
+      if (m.t <= 0) {
+        m.alive = false;
+        m.marker.setVisible(false);
+        this.impact(m, color);
+        continue;
+      }
+      if (m.after) continue;
+      const k = 1 - m.t / m.maxT;
+      // falls in from the upper left, growing as it "approaches"
+      m.sprite.setPosition(m.x - 180 * (1 - k), m.y - 320 * (1 - k)).setScale((0.8 + 0.6 * k) * this.area() * k0).setRotation(g.elapsed * 6);
+      m.marker.setPosition(m.x, m.y).setScale((m.r / 110) * k0).setAlpha(0.15 + 0.45 * k);
+    }
+    this.pool.compact();
+  }
+
+  private drop(x: number, y: number, fall: number, r: number, damage: number, after: boolean) {
+    const m = this.pool.get();
+    m.x = x;
+    m.y = y;
+    m.t = m.maxT = fall;
+    m.r = r;
+    m.damage = damage;
+    m.after = after;
+    m.sprite.setVisible(!after).setTexture(this.evolved ? 'meteor_rock_evo' : 'meteor_rock').setPosition(x - 180, y - 320);
+    m.marker.setVisible(!after).setTint(this.evolved ? EVOLUTIONS.meteor.color : COLORS.meteor).setPosition(x, y)
+      .setScale((r / 110) * texScale()).setAlpha(0.15);
+  }
+
+  private impact(m: Strike, color: number) {
+    const g = this.g;
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(m.x, m.y, m.r, this.tmp)) {
+      const dx = e.x - m.x;
+      const dy = e.y - m.y;
+      const len = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, m.damage, 'meteor', dx / len, dy / len, m.after ? 120 : this.s.knockback);
+    }
+    g.addRing(m.x, m.y, m.r, color, m.after ? 0.25 : 0.45);
+    g.burst(m.x, m.y, color, m.after ? 6 : 18);
+    sfx.play('boom');
+    if (m.after) return;
+    g.shake(90, 0.003);
+    if (this.evolved) {
+      const off = Math.random() * TAU;
+      for (let i = 0; i < 5; i++) {
+        const a = off + (i / 5) * TAU;
+        this.drop(m.x + Math.cos(a) * m.r, m.y + Math.sin(a) * m.r, 0.18, m.r * 0.5, m.damage * 0.35, true);
+      }
+    }
+  }
+
+  destroy() {
+    for (const m of this.pool.active) m.marker.setVisible(false);
+    this.pool.releaseAll();
+  }
+}
+
+// ------------------------------------------------------------------ 旋风 / 风暴之眼
+
+interface Vortex extends Pooled {
+  x: number;
+  y: number;
+  heading: number;
+  life: number;
+  src: number;
+}
+
+class CycloneWeapon extends Weapon {
+  private pool: Pool<Vortex>;
+  private angle = 0;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('cyclone', g);
+    this.pool = new Pool<Vortex>(() => ({
+      alive: false,
+      sprite: g.add.image(0, 0, 'cyclone').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD),
+      x: 0, y: 0, heading: 0, life: 0, src: 0,
+    }));
+  }
+
+  protected onEvolve() {
+    // wandering vortices give way to the permanent pair
+    this.pool.releaseAll();
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    const r = s.extra * this.area();
+
+    if (this.evolved) {
+      const n = s.count + g.stats.amount;
+      while (this.pool.active.length < n) this.spawn(0, Infinity);
+      while (this.pool.active.length > n) {
+        this.pool.active[this.pool.active.length - 1].alive = false;
+        this.pool.compact();
+      }
+      this.angle = (this.angle + s.speed * dt) % TAU;
+      const orbit = 170 * this.area();
+      this.pool.active.forEach((v, i) => {
+        const a = this.angle + (i / n) * TAU;
+        v.x = g.px + Math.cos(a) * orbit;
+        v.y = g.py + Math.sin(a) * orbit;
+      });
+    } else {
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.timer = this.cooldown();
+        const n = s.count + g.stats.amount;
+        const t = g.nearestEnemies(g.px, g.py, 500, 1)[0];
+        const base = t ? Math.atan2(t.y - g.py, t.x - g.px) : Math.random() * TAU;
+        for (let i = 0; i < n; i++) this.spawn(base + (i / n) * TAU, s.speed);
+      }
+      for (const v of this.pool.active) {
+        // meander: the heading drifts a little each frame
+        v.heading += (Math.random() - 0.5) * 3 * dt;
+        v.x += Math.cos(v.heading) * 95 * dt;
+        v.y += Math.sin(v.heading) * 95 * dt;
+        v.life -= dt;
+        if (v.life <= 0) v.alive = false;
+      }
+    }
+
+    const dmg = this.damage();
+    const interval = this.evolved ? s.cooldown : 0.3;
+    const k = texScale();
+    for (const v of this.pool.active) {
+      if (!v.alive) continue;
+      const fade = this.evolved ? 1 : Math.min(1, v.life / 0.4);
+      v.sprite.setPosition(v.x, v.y).setRotation(v.sprite.rotation - 12 * dt).setScale((r / 21) * k).setAlpha(0.85 * fade);
+      this.tmp.length = 0;
+      for (const e of g.queryEnemies(v.x, v.y, r, this.tmp)) {
+        // drag towards the eye (bosses and anchored enemies resist)
+        const dx = v.x - e.x;
+        const dy = v.y - e.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const pull = (1 - e.def.knockResist) * (e.elite || e.boss ? 0.3 : 1) * 140 * dt;
+        if (len > 4) {
+          e.x += (dx / len) * Math.min(pull, len);
+          e.y += (dy / len) * Math.min(pull, len);
+        }
+        if ((e.hitUntil.get(v.src) ?? 0) > g.elapsed) continue;
+        e.hitUntil.set(v.src, g.elapsed + interval);
+        g.damageEnemy(e, dmg, 'cyclone', 0, 0, 0);
+      }
+    }
+    this.pool.compact();
+  }
+
+  private spawn(heading: number, life: number) {
+    const g = this.g;
+    const v = this.pool.get();
+    v.x = g.px;
+    v.y = g.py;
+    v.heading = heading;
+    v.life = life;
+    v.src = g.newSourceId();
+    v.sprite.setTexture(this.evolved ? 'cyclone_evo' : 'cyclone').setPosition(v.x, v.y).setAlpha(0.85);
+  }
+
+  destroy() {
+    this.pool.releaseAll();
+  }
+}
+
+// ------------------------------------------------------------------ 灵体 / 灵魂军团
+
+interface Wisp {
+  sprite: Phaser.GameObjects.Image;
+  x: number;
+  y: number;
+  /** 0 hovering beside the player, 1 dashing at a target, 2 flying back */
+  state: number;
+  target: Enemy | null;
+  cd: number;
+  dashT: number;
+}
+
+class SpiritWeapon extends Weapon {
+  private wisps: Wisp[] = [];
+  private angle = 0;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('spirit', g);
+  }
+
+  protected onEvolve() {
+    for (const w of this.wisps) w.sprite.setTexture('wisp_evo');
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    const s = this.s;
+    const n = s.count + g.stats.amount;
+    while (this.wisps.length < n) {
+      this.wisps.push({
+        sprite: g.add.image(g.px, g.py, this.evolved ? 'wisp_evo' : 'wisp').setDepth(DEPTH_PROJ).setBlendMode(Phaser.BlendModes.ADD),
+        x: g.px, y: g.py, state: 0, target: null, cd: 0.3 + this.wisps.length * 0.15, dashT: 0,
+      });
+    }
+    while (this.wisps.length > n) this.wisps.pop()!.sprite.destroy();
+
+    this.angle = (this.angle + 1.6 * dt) % TAU;
+    const scale = this.area() * texScale();
+    const range = s.extra * this.area();
+    this.wisps.forEach((w, i) => {
+      const slotA = this.angle + (i / n) * TAU;
+      const sx = g.px + Math.cos(slotA) * 46;
+      const sy = g.py + Math.sin(slotA) * 46;
+      let dirX = 0;
+      let dirY = 0;
+      if (w.state === 0) {
+        // hover: ease into the orbit slot, facing along the orbit
+        const k = Math.min(1, dt * 8);
+        w.x += (sx - w.x) * k;
+        w.y += (sy - w.y) * k;
+        dirX = -Math.sin(slotA);
+        dirY = Math.cos(slotA);
+        w.cd -= dt;
+        if (w.cd <= 0) {
+          // pick among the few closest so the wisps spread out instead of all hitting one enemy
+          const near = g.nearestEnemies(g.px, g.py, range, 3);
+          if (near.length) {
+            w.target = near[i % near.length];
+            w.state = 1;
+            w.dashT = 1.2;
+          } else {
+            w.cd = 0.2;
+          }
+        }
+      } else if (w.state === 1) {
+        const t = w.target;
+        w.dashT -= dt;
+        if (!t || !t.alive || w.dashT <= 0) {
+          w.state = 2;
+        } else {
+          dirX = t.x - w.x;
+          dirY = t.y - w.y;
+          const d = Math.hypot(dirX, dirY) || 1;
+          const step = s.speed * dt;
+          if (d <= t.radius + 8 + step) {
+            this.hit(w, t);
+            w.state = 2;
+          } else {
+            w.x += (dirX / d) * step;
+            w.y += (dirY / d) * step;
+          }
+        }
+      } else {
+        dirX = sx - w.x;
+        dirY = sy - w.y;
+        const d = Math.hypot(dirX, dirY) || 1;
+        const step = s.speed * 0.8 * dt;
+        if (d <= step + 6) {
+          w.state = 0;
+          w.cd = this.cooldown();
+        } else {
+          w.x += (dirX / d) * step;
+          w.y += (dirY / d) * step;
+        }
+      }
+      w.sprite.setPosition(w.x, w.y).setScale(scale).setRotation(Math.atan2(dirY, dirX));
+    });
+  }
+
+  private hit(w: Wisp, t: Enemy) {
+    const g = this.g;
+    const dmg = this.damage();
+    const len = Math.hypot(t.x - w.x, t.y - w.y) || 1;
+    g.damageEnemy(t, dmg, 'spirit', (t.x - w.x) / len, (t.y - w.y) / len, this.s.knockback);
+    const color = this.evolved ? EVOLUTIONS.spirit.color : COLORS.spirit;
+    g.burst(t.x, t.y, color, 4);
+    if (!this.evolved) return;
+    // evolved: every hit bursts
+    const r = 55 * this.area();
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(t.x, t.y, r, this.tmp)) {
+      if (e === t) continue;
+      const dx = e.x - t.x;
+      const dy = e.y - t.y;
+      const l = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, dmg * 0.6, 'spirit', dx / l, dy / l, 80);
+    }
+    g.addRing(t.x, t.y, r, color, 0.25);
+    sfx.play('zap');
+  }
+
+  destroy() {
+    for (const w of this.wisps) w.sprite.destroy();
+    this.wisps = [];
+  }
+}
+
 export function createWeapon(id: WeaponId, g: GameScene): Weapon {
   switch (id) {
     case 'bolt': return new BoltWeapon(g);
@@ -757,5 +1244,9 @@ export function createWeapon(id: WeaponId, g: GameScene): Weapon {
     case 'laser': return new LaserWeapon(g);
     case 'frost': return new FrostWeapon(g);
     case 'mine': return new MineWeapon(g);
+    case 'fireball': return new FireballWeapon(g);
+    case 'meteor': return new MeteorWeapon(g);
+    case 'cyclone': return new CycloneWeapon(g);
+    case 'spirit': return new SpiritWeapon(g);
   }
 }

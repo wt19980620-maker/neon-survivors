@@ -1,4 +1,4 @@
-import { CHARACTERS, MAPS, type BossId, type CharId, type GameMode, type MapId, type WeaponId } from './data';
+import { CHARACTERS, MAPS, WEAPON_IDS, type BossId, type CharId, type GameMode, type MapId, type WeaponId } from './data';
 import { loadSave, writeSave, type LifetimeStats, type SaveData } from './save';
 
 /** What happened in the current (or just-finished) run. */
@@ -80,7 +80,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     value: (s, r) => s.stats.boss2 + (r?.boss2 ? 1 : 0),
   },
   {
-    id: 'evolve_all', name: '进化大师', desc: '累计进化全部 8 种武器', gold: 300, target: 8,
+    id: 'evolve_all', name: '进化大师', desc: `累计进化全部 ${WEAPON_IDS.length} 种武器`, gold: 300, target: WEAPON_IDS.length,
     value: (s, r) => union(s.stats.evolved, r?.evolved ?? []),
   },
   {

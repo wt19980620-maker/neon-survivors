@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BOSSES, EVOLUTIONS, ITEMS, RUN_LENGTH, WEAPON_IDS, xpToNext } from '../game/data';
+import { BOSSES, EVOLUTIONS, ITEMS, RUN_LENGTH, xpToNext } from '../game/data';
 import { COLORS, hex } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
@@ -503,7 +503,9 @@ export class UIScene extends Phaser.Scene {
       const perRow = Math.max(1, Math.floor((colW - 30) / cell));
       const rows = Math.max(1, Math.ceil(items.length / perRow));
       const recipeRow = split ? 19 : 21;
-      const recipeH = 34 + WEAPON_IDS.length * recipeRow;
+      // only the weapons in this build: with twelve in the game, the full list no longer fits a phone
+      const recipeIds = gs.weapons.map((wp) => wp.id);
+      const recipeH = 34 + recipeIds.length * recipeRow;
       const ph = split
         ? Math.min(h - 16 - ins.top - ins.bottom, 360)
         : Math.min(h - 40, 110 + rows * rowH + recipeH + 190);
@@ -534,7 +536,7 @@ export class UIScene extends Phaser.Scene {
       const rl = rightCx - colW / 2 + (split ? 12 : 28);
       const rr = rightCx + colW / 2 - (split ? 12 : 28);
       c.add(this.add.text(rightCx, recipeTop, split ? '进化配方（满级 + 对应被动，开宝箱进化）' : '进化配方（武器满级 + 对应被动，打开宝箱时进化）', style(12, COLORS.dim)).setOrigin(0.5, 0));
-      WEAPON_IDS.forEach((id, i) => {
+      recipeIds.forEach((id, i) => {
         const evo = EVOLUTIONS[id];
         const wp = gs.weapons.find((x) => x.id === id);
         const y = recipeTop + 22 + i * recipeRow;
@@ -557,7 +559,7 @@ export class UIScene extends Phaser.Scene {
       const s = gs.stats;
       const line = `伤害 ×${s.might.toFixed(2)}   冷却 ×${s.haste.toFixed(2)}   范围 ×${s.area.toFixed(2)}\n移速 ${Math.round(s.speed)}   拾取 ${Math.round(s.magnet)}   护甲 ${s.armor}   回复 ${s.regen.toFixed(1)}/秒`;
       // split: stats sit under the recipes on the right, freeing the left column for the build
-      const statsY = split ? recipeTop + 22 + WEAPON_IDS.length * recipeRow + 20 : top + ph - 150;
+      const statsY = split ? recipeTop + 22 + recipeIds.length * recipeRow + 20 : top + ph - 150;
       c.add(this.add.text(split ? rightCx : leftCx, statsY, line, { ...style(split ? 12 : 13, COLORS.dim), align: 'center', lineSpacing: 6 }).setOrigin(0.5));
 
       // split: one row of three buttons along the bottom edge; otherwise continue above a row of two

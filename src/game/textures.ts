@@ -159,6 +159,57 @@ const shapes = {
     }, { fill: 0, line: 2.5 });
     neon(ctx, 0xffffff, () => ctx.arc(cx, cy, 3 * s, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
   },
+  fireball(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.fireball) {
+    // teardrop flame pointing right, with a hot core
+    neon(ctx, color, () => {
+      ctx.moveTo(cx + 13 * s, cy);
+      ctx.quadraticCurveTo(cx + 2 * s, cy - 10 * s, cx - 6 * s, cy - 7 * s);
+      ctx.arc(cx - 6 * s, cy, 7 * s, -Math.PI / 2, Math.PI / 2, true);
+      ctx.quadraticCurveTo(cx + 2 * s, cy + 10 * s, cx + 13 * s, cy);
+      ctx.closePath();
+    }, { fill: 0.55, line: 2, blur: 12 });
+    neon(ctx, 0xfff2c4, () => ctx.arc(cx - 4 * s, cy, 3.5 * s, 0, Math.PI * 2), { fill: 1, line: 1, blur: 8 });
+  },
+  meteor(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.meteor) {
+    // rock with a streaking tail up-left
+    neon(ctx, color, () => {
+      ctx.moveTo(cx - 15 * s, cy - 15 * s);
+      ctx.lineTo(cx - 2 * s, cy - 6 * s);
+      ctx.moveTo(cx - 9 * s, cy - 16 * s);
+      ctx.lineTo(cx + 1 * s, cy - 8 * s);
+      ctx.moveTo(cx - 16 * s, cy - 8 * s);
+      ctx.lineTo(cx - 5 * s, cy - 1 * s);
+    }, { fill: 0, line: 2 * s, blur: 8 });
+    neon(ctx, color, () => poly(ctx, cx + 4 * s, cy + 4 * s, 8 * s, 7, 0.4), { fill: 0.6, line: 2, blur: 10 });
+  },
+  cyclone(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.cyclone) {
+    // three spiral arms
+    neon(ctx, color, () => {
+      for (let k = 0; k < 3; k++) {
+        const a0 = (k / 3) * Math.PI * 2;
+        for (let i = 0; i <= 14; i++) {
+          const t = i / 14;
+          const a = a0 + t * 3.2;
+          const r = (3 + t * 12) * s;
+          const x = cx + Math.cos(a) * r;
+          const y = cy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+      }
+    }, { fill: 0, line: 2.2 * s, blur: 8 });
+  },
+  spirit(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.spirit) {
+    // wisp: round head with a wavy tail to the left
+    neon(ctx, color, () => {
+      ctx.arc(cx + 3 * s, cy, 7 * s, -Math.PI / 2, Math.PI / 2);
+      ctx.quadraticCurveTo(cx - 6 * s, cy + 9 * s, cx - 14 * s, cy + 2 * s);
+      ctx.quadraticCurveTo(cx - 7 * s, cy + 1 * s, cx - 10 * s, cy - 4 * s);
+      ctx.quadraticCurveTo(cx - 4 * s, cy - 8 * s, cx + 3 * s, cy - 7 * s);
+      ctx.closePath();
+    }, { fill: 0.5, line: 2, blur: 12 });
+    neon(ctx, 0xffffff, () => ctx.arc(cx + 4 * s, cy, 2.5 * s, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
+  },
   chain(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.chain) {
     neon(ctx, color, () => {
       ctx.moveTo(cx + 3 * s, cy - 15 * s);
@@ -503,6 +554,16 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   weaponIcon('icon_laser', COLORS.laser, (ctx, cx, cy, s) => shapes.laser(ctx, cx, cy, s));
   weaponIcon('icon_frost', COLORS.frost, (ctx, cx, cy, s) => shapes.frost(ctx, cx, cy, s));
   weaponIcon('icon_mine', COLORS.mine, (ctx, cx, cy, s) => shapes.mine(ctx, cx, cy, s));
+  weaponIcon('icon_fireball', COLORS.fireball, (ctx, cx, cy, s) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    shapes.fireball(ctx, 0, 0, s);
+    ctx.restore();
+  });
+  weaponIcon('icon_meteor', COLORS.meteor, (ctx, cx, cy, s) => shapes.meteor(ctx, cx, cy, s));
+  weaponIcon('icon_cyclone', COLORS.cyclone, (ctx, cx, cy, s) => shapes.cyclone(ctx, cx, cy, s));
+  weaponIcon('icon_spirit', COLORS.spirit, (ctx, cx, cy, s) => shapes.spirit(ctx, cx, cy, s));
   sprite(scene, 'mine', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8));
   sprite(scene, 'mine_evo', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8, EVOLUTIONS.mine.color));
 
@@ -527,6 +588,19 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   sprite(scene, 'bolt_evo', 40, 22, (ctx, w, h) => shapes.bolt(ctx, w / 2, h / 2, 1.1, E.bolt.color));
   sprite(scene, 'blade_evo', 40, 44, (ctx, w, h) => shapes.blade(ctx, w / 2, h / 2, 1.1, E.orbit.color));
   sprite(scene, 'disc_evo', 44, 44, (ctx, w, h) => shapes.disc(ctx, w / 2, h / 2, 1.1, E.disc.color));
+  sprite(scene, 'fireball', 36, 28, (ctx, w, h) => shapes.fireball(ctx, w / 2, h / 2, 1));
+  sprite(scene, 'fireball_evo', 44, 34, (ctx, w, h) => shapes.fireball(ctx, w / 2, h / 2, 1.25, E.fireball.color));
+  const rock = (key: string, color: number) =>
+    sprite(scene, key, 40, 40, (ctx, w, h) => {
+      neon(ctx, color, () => poly(ctx, w / 2, h / 2, 13, 7, 0.4), { fill: 0.55, line: 2.5, blur: 14 });
+      neon(ctx, 0xffffff, () => ctx.arc(w / 2 - 2, h / 2 - 2, 4, 0, Math.PI * 2), { fill: 0.9, line: 1, blur: 8 });
+    });
+  rock('meteor_rock', COLORS.meteor);
+  rock('meteor_rock_evo', E.meteor.color);
+  sprite(scene, 'cyclone', 48, 48, (ctx, w, h) => shapes.cyclone(ctx, w / 2, h / 2, 1.4));
+  sprite(scene, 'cyclone_evo', 48, 48, (ctx, w, h) => shapes.cyclone(ctx, w / 2, h / 2, 1.4, E.cyclone.color));
+  sprite(scene, 'wisp', 36, 28, (ctx, w, h) => shapes.spirit(ctx, w / 2, h / 2, 0.9));
+  sprite(scene, 'wisp_evo', 36, 28, (ctx, w, h) => shapes.spirit(ctx, w / 2, h / 2, 0.9, E.spirit.color));
   const evoIcon = (key: string, paint: (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void) =>
     make(scene, key, 48, 48, (ctx, w, h) => {
       iconFrame(ctx, w, h, COLORS.elite);
@@ -572,6 +646,26 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   });
   evoIcon('icon_evo_frost', (ctx, cx, cy) => shapes.frost(ctx, cx, cy, 1.15, E.frost.color));
   evoIcon('icon_evo_mine', (ctx, cx, cy) => shapes.mine(ctx, cx, cy, 1.1, E.mine.color));
+  evoIcon('icon_evo_fireball', (ctx, cx, cy) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    shapes.fireball(ctx, 0, 0, 1.2, E.fireball.color);
+    ctx.restore();
+  });
+  evoIcon('icon_evo_meteor', (ctx, cx, cy) => {
+    shapes.meteor(ctx, cx - 4, cy - 2, 0.7, E.meteor.color);
+    shapes.meteor(ctx, cx + 6, cy + 6, 0.55, E.meteor.color);
+  });
+  evoIcon('icon_evo_cyclone', (ctx, cx, cy) => {
+    shapes.cyclone(ctx, cx - 6, cy + 2, 0.7, E.cyclone.color);
+    shapes.cyclone(ctx, cx + 7, cy - 3, 0.6, E.cyclone.color);
+  });
+  evoIcon('icon_evo_spirit', (ctx, cx, cy) => {
+    shapes.spirit(ctx, cx - 2, cy - 7, 0.6, E.spirit.color);
+    shapes.spirit(ctx, cx + 3, cy + 1, 0.6, E.spirit.color);
+    shapes.spirit(ctx, cx - 4, cy + 9, 0.6, E.spirit.color);
+  });
   evoIcon('icon_evo_disc', (ctx, cx, cy) => {
     shapes.disc(ctx, cx - 5, cy + 4, 0.65, E.disc.color);
     shapes.disc(ctx, cx + 7, cy - 6, 0.5, E.disc.color);
