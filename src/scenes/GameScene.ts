@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import {
   AFFIXES, AFFIX_TUNING, BOSSES, CHAMPION, CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPONS, ITEMS, MAX_PASSIVES, MAX_WEAPONS,
   PASSIVE_IDS, WEAPON_IDS, xpToNext,
-  LB, LIMIT_BREAKS, type LimitBreakId,
+  EGG, LB, LIMIT_BREAKS, type EggStat, type LimitBreakId,
   type AffixId, type BossId, type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import {
@@ -17,6 +17,7 @@ import {
   type DamageNumber, type EnemyBullet, type FxSprite, type Pickup, type PickupKind,
 } from '../game/entities';
 import { createWeapon, type Weapon } from '../game/weapons';
+import { EGG_BY_ID, eggBonus, grantEgg } from '../game/eggs';
 import { Director } from '../game/director';
 import { ObstacleField } from '../game/obstacles';
 import type { RunScore } from '../game/leaderboard';
@@ -219,8 +220,7 @@ export class GameScene extends Phaser.Scene {
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
 
     this.director = new Director(this);
-    if (char.custom) this.loadMeihua();
-    else this.addItem(char.weapon);
+    this.addItem(char.weapon);
     this.recomputeStats();
     this.hp = this.stats.maxHp;
 
@@ -384,7 +384,8 @@ export class GameScene extends Phaser.Scene {
     vibrate(dmg >= 15 ? 60 : 30);
     this.number(this.px, this.py - 20, dmg, '#ff5c7a');
     sfx.play('hurt');
-    if (this.hp <= 0) this.die();
+    if (this.hp <= 0) return this.die();
+    for (const w of this.weapons) w.onHurt();
   }
 
   private die() {
@@ -1103,6 +1104,7 @@ export class GameScene extends Phaser.Scene {
       if (e.bossId) this.bossKinds.add(e.bossId);
       // the arena's endless boss stream would hand out a chest every few seconds: every other one
       if (!this.mapDef.bossRush || this.arenaKills++ % 2 === 0) this.dropPickup('chest', e.x, e.y, 1);
+      if (!this.mapDef.bossRush || Math.random() < EGG.arenaBossChance) this.dropPickup('egg', e.x - 24, e.y, 1);
       const gem = Math.max(3, Math.round(12 * e.reward));
       for (let i = 0; i < 16; i++) {
         const a = (i / 16) * TAU;
@@ -1119,6 +1121,7 @@ export class GameScene extends Phaser.Scene {
     if (e.elite) {
       this.dropPickup('chest', e.x, e.y, 1);
       this.dropPickup('gem', e.x + 20, e.y, 20);
+      if (Math.random() < EGG.eliteChance) this.dropPickup('egg', e.x - 20, e.y, 1);
       if (e.affixes.includes('split')) {
         // three tougher copies (no affixes, no chest) scatter out of the corpse
         for (let i = 0; i < 3; i++) {
@@ -1224,7 +1227,7 @@ export class GameScene extends Phaser.Scene {
         this.collect(p);
         continue;
       }
-      if (p.kind === 'chest' || p.kind === 'heart' || p.kind === 'magnet') {
+      if (p.kind === 'chest' || p.kind === 'heart' || p.kind === 'magnet' || p.kind === 'egg') {
         p.sprite.setPosition(p.x, p.y + Math.sin(p.t * 3) * 3).setScale((1 + Math.sin(p.t * 5) * 0.08) * texScale());
       } else {
         p.sprite.setPosition(p.x, p.y);
@@ -1259,6 +1262,16 @@ export class GameScene extends Phaser.Scene {
         }
         sfx.play('pickup');
         break;
+      case 'egg': {
+        // permanent: saved immediately and applied for the rest of this run too
+        const stat = grantEgg(this.charId);
+        this.recomputeStats();
+        const def = EGG_BY_ID[stat];
+        this.ui()?.banner(`金蛋！${def.label(def.step)}`, false, COLORS.coin);
+        this.burst(this.px, this.py, COLORS.coin, 24);
+        sfx.play('chest');
+        break;
+      }
       case 'chest':
         this.hp = Math.min(this.stats.maxHp, this.hp + 20);
         this.pendingModals.push('chest');
@@ -1268,8 +1281,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gainXp(v: number) {
-    // 梅花花 never levels: her power is bought with gold between runs
-    if (CHAR_BY_ID[this.charId].custom) return;
     this.xp += v * this.stats.growth;
     let need = xpToNext(this.level);
     while (this.xp >= need) {
@@ -1345,13 +1356,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   rollOptions(n = 3): UpgradeOption[] {
-    if (CHAR_BY_ID[this.charId].custom) {
-      // 梅花花's chests can still evolve (handled before this), otherwise they don't touch the bought loadout
-      return [
-        { id: 'heal', name: '治愈', icon: 'icon_heal', color: COLORS.heart, isNew: false, levelText: '', desc: '回复 50% 最大生命' },
-        { id: 'gold', name: '金币袋', icon: 'icon_coin', color: COLORS.coin, isNew: false, levelText: '', desc: '获得 25 金币' },
-      ];
-    }
     const weaponsOwned = this.weapons.length;
     const passivesOwned = this.passiveOrder.length;
     const pool: { id: ItemId; w: number }[] = [];
@@ -1445,20 +1449,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** 梅花花: start with the weapons, passives and limit breaks bought in 局外强化. */
-  private loadMeihua() {
-    const m = loadSave().meihua;
-    const weapons = m.weapons.length ? m.weapons : (['bolt'] as WeaponId[]);
-    for (const id of [...weapons, ...m.passives]) {
-      this.addItem(id);
-      const lvl = Math.max(1, m.levels[id] ?? 1);
-      this.itemLevels.set(id, lvl);
-      const w = this.weapons.find((x) => x.id === id);
-      if (w) w.level = lvl;
-    }
-    for (const [id, n] of Object.entries(m.lb)) if (n) this.limitBreaks.set(id as LimitBreakId, n);
-  }
-
   private addItem(id: ItemId) {
     this.itemLevels.set(id, 1);
     if (ITEMS[id].kind === 'weapon') this.weapons.push(createWeapon(id as WeaponId, this));
@@ -1470,19 +1460,21 @@ export class GameScene extends Phaser.Scene {
     const L = (id: ItemId) => this.itemLevels.get(id) ?? 0;
     const m = CHAR_BY_ID[this.charId].mods;
     const B = (id: LimitBreakId) => this.limitBreaks.get(id) ?? 0;
+    const E = (stat: EggStat) => eggBonus(this.charId, stat);
+    const box = L('box');
     const prevMax = this.hasStats ? this.stats.maxHp : undefined;
     this.hasStats = true;
     this.stats = {
-      maxHp: Math.round((100 + metaRank('hp') * 10 + L('vitality') * 20) * (m.hp ?? 1)) + B('lb_hp') * LB.hp,
-      regen: L('vitality') * 0.3 + (m.regen ?? 0),
-      speed: 165 * (1 + L('speed') * 0.08 + metaRank('speed') * 0.05) * (m.speed ?? 1),
-      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15) * (m.magnet ?? 1) * (1 + B('lb_magnet') * LB.magnet),
-      might: (1 + L('might') * 0.1 + metaRank('might') * 0.05) * (m.might ?? 1) * (1 + B('lb_might') * LB.might),
-      haste: Math.max(LB.minHaste, (1 - L('haste') * 0.08) * (m.cooldown ?? 1) * LB.haste ** B('lb_haste')),
-      area: (1 + L('area') * 0.1) * (m.area ?? 1) * (1 + B('lb_area') * LB.area),
+      maxHp: Math.round((100 + metaRank('hp') * 10 + L('vitality') * 20) * (m.hp ?? 1)) + B('lb_hp') * LB.hp + E('hp'),
+      regen: L('vitality') * 0.3 + (m.regen ?? 0) + E('regen'),
+      speed: 165 * (1 + L('speed') * 0.08 + metaRank('speed') * 0.05 + box * 0.03 + E('speed')) * (m.speed ?? 1),
+      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15 + E('magnet')) * (m.magnet ?? 1) * (1 + B('lb_magnet') * LB.magnet),
+      might: (1 + L('might') * 0.1 + metaRank('might') * 0.05 + box * 0.04 + E('might')) * (m.might ?? 1) * (1 + B('lb_might') * LB.might),
+      haste: Math.max(LB.minHaste, (1 - L('haste') * 0.08 - box * 0.03 - E('haste')) * (m.cooldown ?? 1) * LB.haste ** B('lb_haste')),
+      area: (1 + L('area') * 0.1 + box * 0.04 + E('area')) * (m.area ?? 1) * (1 + B('lb_area') * LB.area),
       amount: L('amount') + (m.amount ?? 0),
       armor: L('armor') + (m.armor ?? 0),
-      growth: (1 + L('growth') * 0.1 + metaRank('growth') * 0.05) * (m.growth ?? 1),
+      growth: (1 + L('growth') * 0.1 + metaRank('growth') * 0.05 + E('growth')) * (m.growth ?? 1),
       greed: 1 + metaRank('greed') * 0.1,
     };
     if (prevMax !== undefined && this.stats.maxHp > prevMax) this.hp += this.stats.maxHp - prevMax;

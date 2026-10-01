@@ -113,7 +113,7 @@ export class Enemy implements Pooled {
   constructor(public sprite: Phaser.GameObjects.Image) {}
 }
 
-export type PickupKind = 'gem' | 'heart' | 'magnet' | 'chest' | 'coin';
+export type PickupKind = 'gem' | 'heart' | 'magnet' | 'chest' | 'coin' | 'egg';
 
 export interface Pickup extends Pooled {
   kind: PickupKind;

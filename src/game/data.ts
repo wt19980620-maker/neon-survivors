@@ -2,7 +2,7 @@ import { COLORS } from './palette';
 
 export type WeaponId =
   | 'bolt' | 'orbit' | 'nova' | 'chain' | 'disc' | 'laser' | 'frost' | 'mine'
-  | 'fireball' | 'meteor' | 'cyclone' | 'spirit';
+  | 'fireball' | 'meteor' | 'cyclone' | 'spirit' | 'sword';
 export type PassiveId =
   | 'might'
   | 'haste'
@@ -12,14 +12,16 @@ export type PassiveId =
   | 'magnet'
   | 'armor'
   | 'vitality'
-  | 'growth';
+  | 'growth'
+  | 'box';
 export type ItemId = WeaponId | PassiveId;
 
 /**
  * Generic per-level weapon numbers. Each weapon interprets `extra` differently:
  * orbit = orbit radius, nova = blast radius, chain = jump range, disc = throw range,
  * laser = beam length, frost = aura radius, mine = blast radius, fireball = blast radius,
- * meteor = impact radius, cyclone = vortex radius, spirit = seek range.
+ * meteor = impact radius, cyclone = vortex radius, spirit = seek range, sword = slash reach.
+ * sword uses speed as its counter-slash flag (> 0 = strikes back when the player is hit).
  * laser uses speed as beam duration, frost uses it as slow strength (0..1),
  * meteor as fall time, cyclone as lifetime (evolved: orbit speed), spirit as dash speed.
  */
@@ -100,6 +102,10 @@ export const WEAPON_LEVELS: Record<WeaponId, WeaponStats[]> = {
     { damage: 14, cooldown: 1.0, count: 2, pierce: 0, area: 1, speed: 520, extra: 320, knockback: 60 },
     [{ damage: 18 }, { count: 3 }, { damage: 22, cooldown: 0.8 }, { count: 4, damage: 26 }],
   ),
+  sword: levels(
+    { damage: 28, cooldown: 1.0, count: 1, pierce: 0, area: 1, speed: 0, extra: 130, knockback: 160 },
+    [{ damage: 38 }, { count: 2 }, { extra: 155, cooldown: 0.85 }, { damage: 50, speed: 1 }],
+  ),
 };
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -151,6 +157,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     id: 'spirit', kind: 'weapon', name: '灵体', icon: 'icon_spirit', color: COLORS.spirit, maxLevel: 5,
     desc: ['召唤两个灵体，自动冲向附近的敌人', '伤害 +4', '灵体 +1', '伤害 +4，攻击更频繁', '灵体 +1，伤害 +4'],
   },
+  sword: {
+    id: 'sword', kind: 'weapon', name: '君临剑', icon: 'icon_sword', color: COLORS.sword, maxLevel: 5,
+    desc: ['向面朝方向挥出一道宽阔的剑弧', '伤害 +10', '同时向身后挥砍', '剑弧更长，挥砍更快', '伤害 +12，受伤时立即反击一圈剑弧'],
+  },
   might: {
     id: 'might', kind: 'passive', name: '力量', icon: 'icon_might', color: 0xff6b6b, maxLevel: 5,
     desc: Array(5).fill('所有伤害 +10%'),
@@ -186,6 +196,10 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   growth: {
     id: 'growth', kind: 'passive', name: '成长', icon: 'icon_growth', color: 0x4dc3ff, maxLevel: 5,
     desc: Array(5).fill('经验获取 +10%'),
+  },
+  box: {
+    id: 'box', kind: 'passive', name: '托罗纳之匣', icon: 'icon_box', color: COLORS.box, maxLevel: 5,
+    desc: Array(5).fill('伤害、范围 +4%，冷却 -3%，移速 +3%'),
   },
 };
 
@@ -263,6 +277,11 @@ export const EVOLUTIONS: Record<WeaponId, EvolutionDef> = {
     desc: '六个灵体高速突袭，每次命中都会爆裂',
     stats: { damage: 34, cooldown: 0.55, count: 6, pierce: 0, area: 1, speed: 640, extra: 380, knockback: 80 },
   },
+  sword: {
+    weapon: 'sword', passive: 'box', name: '唯一解', icon: 'icon_evo_sword', color: 0xfff2b0,
+    desc: '环身一周的巨型剑弧，斩中短暂定身；受伤反击两次',
+    stats: { damage: 60, cooldown: 0.7, count: 1, pierce: 0, area: 1.15, speed: 2, extra: 170, knockback: 200 },
+  },
 };
 
 /** passive id -> weapons it evolves (a passive can serve more than one recipe) */
@@ -270,9 +289,9 @@ export const EVOLVES_WEAPONS: Partial<Record<PassiveId, WeaponId[]>> = {};
 for (const e of Object.values(EVOLUTIONS)) (EVOLVES_WEAPONS[e.passive] ??= []).push(e.weapon);
 
 export const WEAPON_IDS: WeaponId[] = [
-  'bolt', 'orbit', 'nova', 'chain', 'disc', 'laser', 'frost', 'mine', 'fireball', 'meteor', 'cyclone', 'spirit',
+  'bolt', 'orbit', 'nova', 'chain', 'disc', 'laser', 'frost', 'mine', 'fireball', 'meteor', 'cyclone', 'spirit', 'sword',
 ];
-export const PASSIVE_IDS: PassiveId[] = ['might', 'haste', 'area', 'amount', 'speed', 'magnet', 'armor', 'vitality', 'growth'];
+export const PASSIVE_IDS: PassiveId[] = ['might', 'haste', 'area', 'amount', 'speed', 'magnet', 'armor', 'vitality', 'growth', 'box'];
 
 export const MAX_WEAPONS = 4;
 export const MAX_PASSIVES = 5;
@@ -482,12 +501,8 @@ export interface CharDef {
   weapon: WeaponId;
   desc: string;
   mods: CharMods;
-  /** achievement that unlocks this character; none = available from the start */
+  /** achievement that unlocks this character ('all' = every achievement); none = available from the start */
   unlock?: string;
-  /** bought with gold in 局外强化 instead of an achievement */
-  goldUnlock?: number;
-  /** gains no experience: starts each run with a loadout bought with gold (梅花花) */
-  custom?: boolean;
 }
 
 export const CHARACTERS: CharDef[] = [
@@ -525,25 +540,49 @@ export const CHARACTERS: CharDef[] = [
     mods: { amount: 1, might: 0.85, hp: 0.9 }, unlock: 'kills_1k',
   },
   {
-    // weapon is only a placeholder: her loadout is bought in 局外强化
-    id: 'meihua', name: '梅花花', color: 0xff5fa2, weapon: 'bolt', desc: '无法获得经验，靠金币打造',
-    mods: {}, goldUnlock: 1000, custom: true,
+    // the reward for finishing every achievement
+    id: 'meihua', name: '梅花花', color: 0xff5fa2, weapon: 'sword', desc: '君临天下，攻守兼备',
+    mods: { hp: 1.2, might: 1.15, armor: 1 }, unlock: 'all',
   },
 ];
 
-/** 梅花花: gold prices for her permanent loadout. Levels are the item's current level. */
-export const MEIHUA = {
-  unlock: 1000,
-  maxWeapons: 4,
-  maxPassives: 5,
-  buyWeapon: 100,
-  buyPassive: 80,
-  /** upgrade price = per-level × current level */
-  weaponPerLevel: 60,
-  passivePerLevel: 50,
-  /** limit break price = base + step × stacks already bought (all kinds together) */
-  lbBase: 150,
-  lbStep: 50,
+// ---------------------------------------------------------------- golden eggs
+
+/**
+ * 金蛋: each one permanently adds a small random stat to the character who got it.
+ * Bosses always drop one, elites sometimes; they can also be bought with gold in 局外强化.
+ */
+export type EggStat = 'might' | 'hp' | 'regen' | 'speed' | 'haste' | 'area' | 'magnet' | 'growth';
+
+export interface EggStatDef {
+  id: EggStat;
+  name: string;
+  /** per egg */
+  step: number;
+  /** how one stack reads, e.g. "伤害 +2%" */
+  label: (total: number) => string;
+}
+
+const pctLabel = (name: string, sign = '+') => (v: number) => `${name} ${sign}${Math.round(v * 1000) / 10}%`;
+
+export const EGG_STATS: EggStatDef[] = [
+  { id: 'might', name: '伤害', step: 0.02, label: pctLabel('伤害') },
+  { id: 'hp', name: '生命', step: 5, label: (v) => `生命 +${v}` },
+  { id: 'regen', name: '回复', step: 0.1, label: (v) => `回复 +${Math.round(v * 10) / 10}/秒` },
+  { id: 'speed', name: '移速', step: 0.015, label: pctLabel('移速') },
+  { id: 'haste', name: '冷却', step: 0.015, label: pctLabel('冷却', '-') },
+  { id: 'area', name: '范围', step: 0.02, label: pctLabel('范围') },
+  { id: 'magnet', name: '拾取', step: 0.04, label: pctLabel('拾取') },
+  { id: 'growth', name: '经验', step: 0.02, label: pctLabel('经验') },
+];
+
+export const EGG = {
+  /** chance per elite kill (bosses always drop one, arena bosses less often) */
+  eliteChance: 0.2,
+  arenaBossChance: 0.35,
+  /** gold price = base + step × eggs this character already has */
+  priceBase: 100,
+  priceStep: 15,
 };
 
 export const CHAR_BY_ID = Object.fromEntries(CHARACTERS.map((c) => [c.id, c])) as Record<CharId, CharDef>;

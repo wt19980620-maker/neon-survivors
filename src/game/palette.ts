@@ -14,6 +14,8 @@ export const COLORS = {
   meteor: 0xff4d8a,
   cyclone: 0x9dffe6,
   spirit: 0xe6b3ff,
+  sword: 0xffc94d,
+  box: 0xd9a066,
   spitter: 0x4dffd2,
   splitter: 0x4d7cff,
   bomber: 0xff5a36,

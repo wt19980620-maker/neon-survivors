@@ -1,17 +1,17 @@
 import Phaser from 'phaser';
 import {
-  CHAR_BY_ID, CHARACTERS, EVOLUTIONS, ITEMS, LIMIT_BREAKS, MAPS, MAP_BY_ID, MEIHUA, META_DEFS, PASSIVE_IDS, WEAPON_IDS, charModLines, metaCost,
+  CHAR_BY_ID, CHARACTERS, EGG_STATS, ITEMS, MAPS, MAP_BY_ID, META_DEFS, charModLines, metaCost,
   type CharDef, type CharId, type GameMode,
 } from '../game/data';
-import { buildComplete, lbStacks, meihua, offer, purchase, unlockMeihua, type MeihuaGoodId } from '../game/meihua';
+import { EGG_BY_ID, buyEgg, eggCounts, eggPrice, eggTotal } from '../game/eggs';
 import { buildSettings } from '../ui/settings';
 import { askFriendGroup, askNickname, fetchBoard, leaderboardEnabled, playerId, type ScoreRow } from '../game/leaderboard';
 import { COLORS } from '../game/palette';
 import { sfx } from '../game/audio';
 import { music } from '../game/music';
-import { loadSave, writeSave } from '../game/save';
+import { loadSave, takeSaveNotice, writeSave } from '../game/save';
 import {
-  ACHIEVEMENTS, ACHIEVEMENT_BY_ID, checkAchievements, unlockLabel, isCharUnlocked, isDone, isMapUnlocked,
+  ACHIEVEMENTS, ACHIEVEMENT_BY_ID, charUnlockText, checkAchievements, unlockLabel, isCharUnlocked, isDone, isMapUnlocked,
 } from '../game/achievements';
 import { formatTime, glowText, makeButton, panel, style } from '../ui/widgets';
 import { canSplit, fitCamera, isShort, isTouch, safeArea, vh, vw } from '../ui/screen';
@@ -41,8 +41,10 @@ export class MenuScene extends Phaser.Scene {
   private boardReq = 0;
   private mapIndex = 0;
   private notice = '';
-  private shopTab: 'meta' | 'meihua' = 'meta';
-  private meihuaSel: MeihuaGoodId | null = null;
+  private shopTab: 'meta' | 'eggs' = 'meta';
+  /** character shown on the 金蛋 tab, and what the last egg bought there gave */
+  private eggChar: CharId | null = null;
+  private eggResult = '';
 
   constructor() {
     super('Menu');
@@ -71,9 +73,10 @@ export class MenuScene extends Phaser.Scene {
 
     // catch achievements earned before they existed (older saves) or while leaving a run
     const fresh = checkAchievements(null);
-    this.notice = fresh.length
-      ? `达成 ${fresh.length} 个成就，获得 ${fresh.reduce((s, a) => s + a.gold, 0)} 金币`
-      : '';
+    this.notice = [
+      takeSaveNotice(),
+      fresh.length ? `达成 ${fresh.length} 个成就，获得 ${fresh.reduce((s, a) => s + a.gold, 0)} 金币` : '',
+    ].filter(Boolean).join('  ·  ');
 
     this.buildMain();
     this.scale.on('resize', this.onResize, this);
@@ -185,12 +188,6 @@ export class MenuScene extends Phaser.Scene {
     const char = save.selectedChar;
     const map = MAPS[this.mapIndex]?.id ?? save.selectedMap;
     if (!isCharUnlocked(char) || !isMapUnlocked(map)) return;
-    if (CHAR_BY_ID[char].custom && meihua().weapons.length === 0) {
-      // 梅花花 needs at least one weapon bought before she can head out
-      this.shopTab = 'meihua';
-      this.openOverlay('shop');
-      return;
-    }
     sfx.unlock();
     this.scene.start('Game', { char, map, mode: save.selectedMode });
   }
@@ -264,21 +261,14 @@ export class MenuScene extends Phaser.Scene {
     this.openOverlay('chars');
   }
 
-  /** Starting weapon shown on a character card; 梅花花 shows her first bought weapon. */
+  /** Starting weapon shown on a character card. */
   private cardWeapon(ch: CharDef): { icon: string; name: string } {
-    if (!ch.custom) return ITEMS[ch.weapon];
-    const first = meihua().weapons[0];
-    return first ? ITEMS[first] : { icon: 'icon_coin', name: '金币打造' };
+    return ITEMS[ch.weapon];
   }
 
-  /** Stat lines on a character card; 梅花花 shows how far her bought loadout has come. */
+  /** Stat lines on a character card. */
   private cardLines(ch: CharDef): string[] {
-    if (!ch.custom) return charModLines(ch.mods);
-    const m = meihua();
-    const lines = [`武器 ${m.weapons.length}/${MEIHUA.maxWeapons}`, `被动 ${m.passives.length}/${MEIHUA.maxPassives}`];
-    const lb = lbStacks();
-    if (lb > 0) lines.push(`突破 ${lb}`);
-    return lines;
+    return charModLines(ch.mods);
   }
 
   private cycleChar(dir: number) {
@@ -358,7 +348,8 @@ export class MenuScene extends Phaser.Scene {
 
       const weapon = this.cardWeapon(ch);
       const lines = this.cardLines(ch);
-      const unlockAch = ch.unlock ? ACHIEVEMENT_BY_ID[ch.unlock] : ch.goldUnlock ? { desc: `${ch.goldUnlock} 金币（局外强化）` } : null;
+      const unlockText = charUnlockText(ch);
+      const unlockAch = unlockText ? { desc: unlockText } : null;
       if (wide && chh < 300) {
         // compact card for landscape phones: drop the flavour line, tighten the spacing
         card.add(this.add.image(0, -chh / 2 + 36, `player_${ch.id}`).setScale(1.6 * texScale()).setAlpha(unlocked ? 1 : 0.25));
@@ -644,7 +635,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(narrow ? 0 : 0.5, 0.5), COLORS.coin, 12));
     c.add(this.add.text(w / 2 + pw / 2 - 16, top + (short ? 22 : 34), `金币 ${save.gold}`, style(13, COLORS.coin, true)).setOrigin(1, 0.5));
     const ty = top + (short ? 52 : 76);
-    const tab = (x: number, label: string, id: 'meta' | 'meihua', color: number) => {
+    const tab = (x: number, label: string, id: 'meta' | 'eggs', color: number) => {
       const on = this.shopTab === id;
       c.add(makeButton(this, x, ty, 112, short ? 28 : 32, label, () => {
         if (on) return;
@@ -654,11 +645,11 @@ export class MenuScene extends Phaser.Scene {
       }, on ? color : COLORS.dim, 14));
     };
     tab(w / 2 - 60, '通用强化', 'meta', COLORS.coin);
-    tab(w / 2 + 60, '梅花花', 'meihua', CHAR_BY_ID.meihua.color);
+    tab(w / 2 + 60, '金蛋', 'eggs', COLORS.elite);
   }
 
   private buildShop(c: Phaser.GameObjects.Container, w: number, h: number) {
-    if (this.shopTab === 'meihua') return this.buildMeihuaShop(c, w, h);
+    if (this.shopTab === 'eggs') return this.buildEggShop(c, w, h);
     const save = loadSave();
     const ins = safeArea();
     const rowH = 58;
@@ -718,138 +709,80 @@ export class MenuScene extends Phaser.Scene {
     c.add(makeButton(this, w / 2, top + ph - (short ? 28 : 36), 160, short ? 36 : 40, '返回', () => this.closeOverlay(), COLORS.player, 18));
   }
 
-  private buildMeihuaShop(c: Phaser.GameObjects.Container, w: number, h: number) {
+  /** 金蛋: per-character permanent random stats, found in runs or bought here. */
+  private buildEggShop(c: Phaser.GameObjects.Container, w: number, h: number) {
     const save = loadSave();
     const ins = safeArea();
     const short = isShort(h);
     const split = short && canSplit(w, 520);
-    const pw = Math.min(split ? 820 : 560, w - 24 - ins.left - ins.right);
-    const ph = Math.min(h - 16 - ins.top - ins.bottom, 600);
+    const pw = Math.min(split ? 760 : 520, w - 24 - ins.left - ins.right);
+    const ph = Math.min(h - 16 - ins.top - ins.bottom, 560);
     const top = h / 2 - ph / 2;
-    const color = CHAR_BY_ID.meihua.color;
-    c.add(panel(this, w / 2, h / 2, pw, ph, color));
+    c.add(panel(this, w / 2, h / 2, pw, ph, COLORS.elite));
     this.shopHeader(c, w, top, pw, short);
-    const bodyTop = top + (short ? 74 : 104);
-    const back = (x: number, y: number, bw = 140) =>
-      c.add(makeButton(this, x, y, bw, short ? 34 : 40, '返回', () => this.closeOverlay(), COLORS.player, 17));
 
-    const m = meihua();
-    if (!m.unlocked) {
-      const cy = bodyTop + (top + ph - bodyTop) / 2 - (short ? 24 : 40);
-      if (!short) c.add(this.add.image(w / 2, cy - 84, 'player_meihua').setScale(2.2 * texScale()));
-      const intro = this.add.text(w / 2, cy, [
-        '梅花花无法获得经验。',
-        '用金币为她购买武器和被动，',
-        '永久生效，每局都带着出战。',
-        '全部满级后还能购买突破强化。',
-      ].join('\n'), { ...style(short ? 12 : 14, COLORS.text), align: 'center', lineSpacing: short ? 3 : 6 }).setOrigin(0.5);
-      c.add(intro);
-      const btn = makeButton(this, w / 2, cy + intro.height / 2 + (short ? 26 : 40), 230, short ? 36 : 44, `解锁梅花花 · ${MEIHUA.unlock} 金`, () => {
-        if (!unlockMeihua()) return;
-        sfx.play('victory');
-        this.buildMain();
-        this.openOverlay('shop');
-      }, color, 17);
-      btn.setEnabled(save.gold >= MEIHUA.unlock);
-      c.add(btn);
-      back(w / 2, top + ph - (short ? 24 : 32));
-      return;
+    const unlocked = CHARACTERS.filter((ch) => isCharUnlocked(ch.id));
+    if (!this.eggChar || !unlocked.some((ch) => ch.id === this.eggChar)) {
+      this.eggChar = isCharUnlocked(save.selectedChar) ? save.selectedChar : unlocked[0].id;
     }
+    const ch = CHAR_BY_ID[this.eggChar];
+    const cycle = (dir: number) => {
+      const i = unlocked.findIndex((x) => x.id === this.eggChar);
+      this.eggChar = unlocked[(i + dir + unlocked.length) % unlocked.length].id;
+      this.eggResult = '';
+      sfx.play('select');
+      this.openOverlay('shop');
+    };
 
-    // ---- icon grid (left column on landscape, top on portrait)
-    const gridW = split ? pw * 0.56 - 24 : pw - 32;
-    const gridX = w / 2 - pw / 2 + 16;
-    const sections: { label: string; ids: MeihuaGoodId[] }[] = [
-      { label: `武器 ${m.weapons.length}/${MEIHUA.maxWeapons}`, ids: WEAPON_IDS },
-      { label: `被动 ${m.passives.length}/${MEIHUA.maxPassives}`, ids: PASSIVE_IDS },
-      { label: buildComplete() ? `突破 · 已叠加 ${lbStacks()} 层` : '突破 · 武器被动全部满级后开放', ids: LIMIT_BREAKS.map((l) => l.id) },
-    ];
-    const labelH = 18;
-    const gap = 6;
-    // portrait: the detail block sits under the grid; landscape gives it its own column
-    const detailH = split ? 0 : short ? 104 : 128;
-    const footer = short ? 44 : 56;
-    const availH = top + ph - footer - detailH - bodyTop;
-    let size = 44;
-    const perRowOf = () => Math.max(1, Math.floor((gridW + gap) / (size + gap)));
-    const gridH = () => sections.reduce((sum, sec) => sum + labelH + Math.ceil(sec.ids.length / perRowOf()) * (size + gap), 0);
-    while (size > 24 && gridH() > availH) size -= 2;
-    const perRow = perRowOf();
+    // character picker
+    let y = top + (short ? 96 : 130);
+    const left = w / 2 - pw / 2 + 16;
+    const right = w / 2 + pw / 2 - 16;
+    c.add(makeButton(this, left + 20, y, 40, short ? 34 : 40, '‹', () => cycle(-1), COLORS.dim, 20));
+    c.add(makeButton(this, right - 20, y, 40, short ? 34 : 40, '›', () => cycle(1), COLORS.dim, 20));
+    c.add(this.add.image(w / 2 - 70, y, `player_${ch.id}`).setScale(1.3 * texScale()));
+    c.add(this.add.text(w / 2 - 46, y - 9, ch.name, style(short ? 16 : 18, ch.color, true)).setOrigin(0, 0.5));
+    c.add(this.add.text(w / 2 - 46, y + 11, `金蛋 ×${eggTotal(ch.id)}`, style(13, COLORS.elite, true)).setOrigin(0, 0.5));
 
-    if (!this.meihuaSel) this.meihuaSel = m.weapons[0] ?? 'bolt';
-    const sel = this.meihuaSel;
-    const goodDef = (id: MeihuaGoodId) => (id.startsWith('lb_') ? LIMIT_BREAKS.find((l) => l.id === id)! : ITEMS[id as keyof typeof ITEMS]);
-    let y = bodyTop;
-    for (const sec of sections) {
-      c.add(this.add.text(gridX, y + labelH / 2, sec.label, style(12, COLORS.dim)).setOrigin(0, 0.5));
-      y += labelH;
-      sec.ids.forEach((id, i) => {
-        const x = gridX + (i % perRow) * (size + gap) + size / 2;
-        const cy = y + Math.floor(i / perRow) * (size + gap) + size / 2;
-        const isLb = id.startsWith('lb_');
-        const lvl = isLb ? (m.lb[id as keyof typeof m.lb] ?? 0) : (m.levels[id as keyof typeof m.levels] ?? 0);
-        const owned = isLb ? buildComplete() : lvl > 0;
-        if (id === sel) c.add(this.add.rectangle(x, cy, size + 5, size + 5, 0x000000, 0).setStrokeStyle(2, COLORS.coin, 1));
-        const img = this.add.image(x, cy, goodDef(id).icon).setDisplaySize(size, size).setAlpha(owned ? 1 : 0.32);
-        c.add(img);
-        const maxed = !isLb && lvl >= ITEMS[id as keyof typeof ITEMS].maxLevel;
-        const badge = isLb ? (lvl > 0 ? `×${lvl}` : '') : lvl > 0 ? (maxed ? 'M' : String(lvl)) : '';
-        if (badge) c.add(this.add.text(x + size / 2 - 1, cy + size / 2, badge, style(11, maxed ? COLORS.coin : COLORS.text, true)).setOrigin(1, 1).setStroke('#07060f', 3));
-        img.setInteractive({ useHandCursor: true });
-        img.on('pointerdown', () => {
-          this.meihuaSel = id;
-          sfx.play('select');
-          this.openOverlay('shop');
-        });
-      });
-      y += Math.ceil(sec.ids.length / perRow) * (size + gap);
-    }
+    // what this character's eggs add up to
+    const counts = eggCounts(ch.id);
+    const cols = split ? 4 : 2;
+    const cellW = (pw - 32) / cols;
+    const cellH = short ? 22 : 28;
+    y += short ? 30 : 38;
+    EGG_STATS.forEach((def, i) => {
+      const n = counts[def.id] ?? 0;
+      const x = left + (i % cols) * cellW;
+      const cy = y + Math.floor(i / cols) * cellH;
+      const text = n > 0 ? `${def.label(n * def.step)}（${n}）` : `${def.name} —`;
+      c.add(this.add.text(x + 4, cy, text, style(13, n > 0 ? COLORS.text : COLORS.dim)).setOrigin(0, 0));
+    });
+    y += Math.ceil(EGG_STATS.length / cols) * cellH + (short ? 2 : 8);
+    const howTo = split
+      ? '首领必掉、精英有几率掉 · 每个金蛋随机永久提升该角色一项属性'
+      : ['首领必掉，精英有几率掉', '每个金蛋随机永久提升该角色一项属性'].join('\n');
+    c.add(this.add.text(w / 2, y, howTo, {
+      ...style(12, COLORS.dim), align: 'center', lineSpacing: 4,
+    }).setOrigin(0.5, 0));
+    if (this.eggResult) c.add(glowText(this.add.text(w / 2, top + ph - (short ? 64 : 84), this.eggResult, style(15, COLORS.elite, true)).setOrigin(0.5), COLORS.elite, 6));
 
-    // ---- detail of the selected good, with the buy button
-    const dx = split ? w / 2 - pw / 2 + pw * 0.56 : w / 2 - pw / 2 + 16;
-    const dw = split ? pw * 0.44 - 16 : pw - 32;
-    const dTop = split ? bodyTop + 4 : y + 2;
-    const def = goodDef(sel);
-    const o = offer(sel);
-    const level = o.level;
-    let status: string;
-    let desc: string;
-    let hint = '';
-    if (sel.startsWith('lb_')) {
-      status = `已叠加 ${level} 层`;
-      desc = LIMIT_BREAKS.find((l) => l.id === sel)!.desc;
-    } else {
-      const item = ITEMS[sel as keyof typeof ITEMS];
-      status = level === 0 ? '未拥有' : level >= item.maxLevel ? `Lv ${level}（满级）` : `Lv ${level} → ${level + 1}`;
-      desc = item.desc[Math.min(level, item.maxLevel - 1)];
-      if (item.kind === 'weapon') hint = `进化：满级 + ${ITEMS[EVOLUTIONS[sel as keyof typeof EVOLUTIONS].passive].name}（局内开宝箱时）`;
-    }
-    c.add(this.add.text(dx, dTop, def.name, style(short ? 16 : 18, def.color, true)).setOrigin(0, 0));
-    c.add(this.add.text(dx + dw, dTop + 3, status, style(13, COLORS.dim)).setOrigin(1, 0));
-    const descT = this.add.text(dx, dTop + (short ? 24 : 28), desc, { ...style(13, COLORS.text), wordWrap: { width: dw, useAdvancedWrap: true } });
-    c.add(descT);
-    if (hint) c.add(this.add.text(dx, descT.y + descT.height + 4, hint, { ...style(12, COLORS.elite), wordWrap: { width: dw, useAdvancedWrap: true } }));
-
-    const label = o.kind === 'buy' ? `购买 · ${o.price} 金`
-      : o.kind === 'upgrade' ? `升级 · ${o.price} 金`
-        : o.kind === 'lb' ? `突破 · ${o.price} 金`
-          : o.kind === 'maxed' ? '已满级'
-            : o.kind === 'slotsFull' ? '槽位已满' : '全部满级后开放';
-    const affordable = 'price' in o && save.gold >= o.price;
-    const bx = split ? dx + dw / 2 : w / 2 - 72;
-    const btnY = split ? top + ph - 80 : top + ph - footer / 2 - 2;
-    const buy = makeButton(this, bx, btnY, split ? Math.min(220, dw) : 136, short ? 34 : 40, label, () => {
-      if (!purchase(sel)) return;
-      sfx.play('levelup');
+    // buy + back
+    const by = top + ph - (short ? 26 : 34);
+    const price = eggPrice(ch.id);
+    // two buttons side by side, sized to the panel so they never touch its edges
+    const bw = Math.min(144, (pw - 44) / 2);
+    const buy = makeButton(this, w / 2 - bw / 2 - 6, by, bw, short ? 34 : 40, `购买 · ${price} 金`, () => {
+      const stat = buyEgg(ch.id);
+      if (!stat) return;
+      const def = EGG_BY_ID[stat];
+      this.eggResult = `${ch.name}获得金蛋：${def.label(def.step)}`;
+      sfx.play('chest');
       this.buildMain();
       this.openOverlay('shop');
-    }, 'price' in o ? color : COLORS.dim, 15);
-    buy.setEnabled(affordable);
+    }, COLORS.elite, 15);
+    buy.setEnabled(save.gold >= price);
     c.add(buy);
-    if (o.kind === 'buy' && split) c.add(this.add.text(bx, btnY - (short ? 26 : 30), '槽位有限，购买后不能更换', style(11, COLORS.dim)).setOrigin(0.5, 0.5));
-    else if (o.kind === 'buy') c.add(this.add.text(dx, descT.y + descT.height + (hint ? 24 : 6), '槽位有限，购买后不能更换', style(11, COLORS.dim)));
-    if (split) back(bx, top + ph - 34);
-    else back(w / 2 + 72, btnY, 136);
+    c.add(makeButton(this, w / 2 + bw / 2 + 6, by, bw, short ? 34 : 40, '返回', () => this.closeOverlay(), COLORS.player, 17));
   }
 
   update(_t: number, deltaMs: number) {

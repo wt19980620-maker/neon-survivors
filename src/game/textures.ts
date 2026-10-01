@@ -210,6 +210,27 @@ const shapes = {
     }, { fill: 0.5, line: 2, blur: 12 });
     neon(ctx, 0xffffff, () => ctx.arc(cx + 4 * s, cy, 2.5 * s, 0, Math.PI * 2), { fill: 1, line: 1, blur: 6 });
   },
+  sword(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.sword) {
+    // diagonal blade with a crossguard, point to the upper right
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 4);
+    neon(ctx, color, () => {
+      ctx.moveTo(-6 * s, -2.5 * s);
+      ctx.lineTo(13 * s, -2.5 * s);
+      ctx.lineTo(17 * s, 0);
+      ctx.lineTo(13 * s, 2.5 * s);
+      ctx.lineTo(-6 * s, 2.5 * s);
+      ctx.closePath();
+    }, { fill: 0.55, line: 2, blur: 10 });
+    neon(ctx, color, () => {
+      ctx.moveTo(-6 * s, -7 * s);
+      ctx.lineTo(-6 * s, 7 * s);
+      ctx.moveTo(-6 * s, 0);
+      ctx.lineTo(-14 * s, 0);
+    }, { fill: 0, line: 2.6 * s, blur: 6 });
+    ctx.restore();
+  },
   chain(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: number = COLORS.chain) {
     neon(ctx, color, () => {
       ctx.moveTo(cx + 3 * s, cy - 15 * s);
@@ -604,6 +625,22 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   weaponIcon('icon_meteor', COLORS.meteor, (ctx, cx, cy, s) => shapes.meteor(ctx, cx, cy, s));
   weaponIcon('icon_cyclone', COLORS.cyclone, (ctx, cx, cy, s) => shapes.cyclone(ctx, cx, cy, s));
   weaponIcon('icon_spirit', COLORS.spirit, (ctx, cx, cy, s) => shapes.spirit(ctx, cx, cy, s));
+  weaponIcon('icon_sword', COLORS.sword, (ctx, cx, cy, s) => shapes.sword(ctx, cx, cy, s));
+  // golden egg: pickup and icon
+  const egg = (ctx: CanvasRenderingContext2D, cx: number, cy: number, k: number) => {
+    neon(ctx, COLORS.coin, () => ctx.ellipse(cx, cy, 9 * k, 11.5 * k, 0, 0, Math.PI * 2), { fill: 0.55, line: 2.2, blur: 12 });
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.ellipse(cx - 3 * k, cy - 4 * k, 2.2 * k, 3.4 * k, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+  sprite(scene, 'egg', 32, 36, (ctx, w, h) => egg(ctx, w / 2, h / 2, 1));
+  make(scene, 'icon_egg', 48, 48, (ctx, w, h) => {
+    iconFrame(ctx, w, h, COLORS.coin);
+    egg(ctx, w / 2, h / 2, 1.2);
+  });
   sprite(scene, 'mine', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8));
   sprite(scene, 'mine_evo', 32, 32, (ctx, w, h) => shapes.mine(ctx, w / 2, h / 2, 0.8, EVOLUTIONS.mine.color));
 
@@ -616,6 +653,7 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   glyphIcon(scene, 'icon_armor', 0x9aa8ff, '甲');
   glyphIcon(scene, 'icon_vitality', 0xff6b8b, '命');
   glyphIcon(scene, 'icon_growth', 0x4dc3ff, '长');
+  glyphIcon(scene, 'icon_box', COLORS.box, '匣');
   glyphIcon(scene, 'icon_coin', 0xffd24d, '金');
   glyphIcon(scene, 'icon_revive', 0xffffff, '魂');
   glyphIcon(scene, 'icon_heal', COLORS.heart, '愈');
@@ -641,6 +679,21 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
   sprite(scene, 'cyclone_evo', 48, 48, (ctx, w, h) => shapes.cyclone(ctx, w / 2, h / 2, 1.4, E.cyclone.color));
   sprite(scene, 'wisp', 36, 28, (ctx, w, h) => shapes.spirit(ctx, w / 2, h / 2, 0.9));
   sprite(scene, 'wisp_evo', 36, 28, (ctx, w, h) => shapes.spirit(ctx, w / 2, h / 2, 0.9, E.spirit.color));
+  // sword slash: a crescent pointing right, centred on the swing's pivot (radius 50 = SLASH_TEX_R)
+  const slash = (key: string, color: number) =>
+    sprite(scene, key, 108, 108, (ctx, w, h) => {
+      const cx = w / 2;
+      const cy = h / 2;
+      const a = (65 * Math.PI) / 180;
+      neon(ctx, color, () => {
+        ctx.arc(cx, cy, 50, -a, a);
+        ctx.arc(cx - 10, cy, 36, a * 0.9, -a * 0.9, true);
+        ctx.closePath();
+      }, { fill: 0.45, line: 2, blur: 12 });
+      neon(ctx, 0xffffff, () => ctx.arc(cx, cy, 48, -a * 0.8, a * 0.8), { fill: 0, line: 1.5, blur: 6 });
+    });
+  slash('slash', COLORS.sword);
+  slash('slash_evo', E.sword.color);
   const evoIcon = (key: string, paint: (ctx: CanvasRenderingContext2D, cx: number, cy: number) => void) =>
     make(scene, key, 48, 48, (ctx, w, h) => {
       iconFrame(ctx, w, h, COLORS.elite);
@@ -705,6 +758,10 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     shapes.spirit(ctx, cx - 2, cy - 7, 0.6, E.spirit.color);
     shapes.spirit(ctx, cx + 3, cy + 1, 0.6, E.spirit.color);
     shapes.spirit(ctx, cx - 4, cy + 9, 0.6, E.spirit.color);
+  });
+  evoIcon('icon_evo_sword', (ctx, cx, cy) => {
+    shapes.sword(ctx, cx - 2, cy + 2, 1.1, E.sword.color);
+    neon(ctx, E.sword.color, () => ctx.arc(cx, cy, 15, Math.PI * 0.15, Math.PI * 0.85), { fill: 0, line: 2, blur: 6 });
   });
   evoIcon('icon_evo_disc', (ctx, cx, cy) => {
     shapes.disc(ctx, cx - 5, cy + 4, 0.65, E.disc.color);

@@ -42,6 +42,9 @@ export abstract class Weapon {
 
   abstract update(dt: number): void;
 
+  /** Called when the player takes damage (君临剑 strikes back). */
+  onHurt() {}
+
   destroy() {}
 }
 
@@ -1234,6 +1237,114 @@ class SpiritWeapon extends Weapon {
   }
 }
 
+// ------------------------------------------------------------------ 君临剑 / 唯一解
+
+interface SlashFx {
+  img: Phaser.GameObjects.Image;
+  life: number;
+  max: number;
+  scale: number;
+}
+
+const SLASH_ARC = (65 * Math.PI) / 180;
+/** radius the slash textures are drawn at; sprites scale from it to the real reach */
+const SLASH_TEX_R = 50;
+
+class SwordWeapon extends Weapon {
+  private fx: SlashFx[] = [];
+  private counterCd = 0;
+  private pendingCounter = -1;
+  private tmp: Enemy[] = [];
+
+  constructor(g: GameScene) {
+    super('sword', g);
+  }
+
+  private reach() {
+    return this.s.extra * this.area();
+  }
+
+  update(dt: number) {
+    const g = this.g;
+    this.counterCd -= dt;
+    if (this.pendingCounter >= 0) {
+      this.pendingCounter -= dt;
+      if (this.pendingCounter < 0) this.swing(true, 1.5);
+    }
+    this.timer -= dt;
+    if (this.timer <= 0) {
+      // only swing when something is in reach, like the nova
+      this.tmp.length = 0;
+      if (g.queryEnemies(g.px, g.py, this.reach() + 10, this.tmp).length === 0) {
+        this.timer = 0.12;
+      } else {
+        this.swing(this.evolved, 1);
+        this.timer = this.cooldown();
+      }
+    }
+    for (const f of this.fx) {
+      if (f.life <= 0) continue;
+      f.life -= dt;
+      const k = Math.max(0, f.life / f.max);
+      f.img.setPosition(g.px, g.py).setAlpha(k).setScale(f.scale * (1.08 - 0.08 * k));
+      if (f.life <= 0) f.img.setVisible(false);
+    }
+  }
+
+  /** Arcs towards the facing direction (more with 多重), or a full circle when `full`. */
+  private swing(full: boolean, mult: number) {
+    const g = this.g;
+    const s = this.s;
+    const reach = this.reach();
+    const face = Math.atan2(g.faceY, g.faceX);
+    const n = full ? 3 : s.count + g.stats.amount;
+    const dmg = this.damage() * mult;
+    this.tmp.length = 0;
+    for (const e of g.queryEnemies(g.px, g.py, reach, this.tmp)) {
+      const dx = e.x - g.px;
+      const dy = e.y - g.py;
+      const a = Math.atan2(dy, dx);
+      let inArc = full;
+      for (let i = 0; i < n && !inArc; i++) {
+        inArc = Math.abs(Phaser.Math.Angle.Wrap(a - (face + (i / n) * TAU))) <= SLASH_ARC;
+      }
+      if (!inArc) continue;
+      const len = Math.hypot(dx, dy) || 1;
+      g.damageEnemy(e, dmg, 'sword', dx / len, dy / len, s.knockback);
+      // the evolved blade pins what it cuts for a moment
+      if (this.evolved && e.alive) g.freezeEnemy(e, 0.3);
+    }
+    const tex = this.evolved ? 'slash_evo' : 'slash';
+    for (let i = 0; i < n; i++) this.spawnFx(tex, face + (i / n) * TAU, reach);
+    if (full) g.addRing(g.px, g.py, reach, this.evolved ? EVOLUTIONS.sword.color : COLORS.sword, 0.3);
+    sfx.play('disc');
+  }
+
+  private spawnFx(tex: string, ang: number, reach: number) {
+    let f = this.fx.find((x) => x.life <= 0);
+    if (!f) {
+      f = { img: this.g.add.image(0, 0, tex).setDepth(DEPTH_PROJ + 2).setBlendMode(Phaser.BlendModes.ADD), life: 0, max: 0.18, scale: 1 };
+      this.fx.push(f);
+    }
+    f.life = f.max;
+    f.scale = (reach / SLASH_TEX_R) * texScale();
+    f.img.setTexture(tex).setVisible(true).setRotation(ang).setPosition(this.g.px, this.g.py).setScale(f.scale).setAlpha(1);
+  }
+
+  /** Lv5 and evolved: getting hit answers with a full-circle slash (the evolved blade twice). */
+  onHurt() {
+    if (this.s.speed <= 0 || this.counterCd > 0) return;
+    this.counterCd = 0.8;
+    this.swing(true, 1.5);
+    if (this.evolved) this.pendingCounter = 0.25;
+  }
+
+  destroy() {
+    for (const f of this.fx) f.img.destroy();
+    this.fx = [];
+  }
+}
+
 export function createWeapon(id: WeaponId, g: GameScene): Weapon {
   switch (id) {
     case 'bolt': return new BoltWeapon(g);
@@ -1248,5 +1359,6 @@ export function createWeapon(id: WeaponId, g: GameScene): Weapon {
     case 'meteor': return new MeteorWeapon(g);
     case 'cyclone': return new CycloneWeapon(g);
     case 'spirit': return new SpiritWeapon(g);
+    case 'sword': return new SwordWeapon(g);
   }
 }

@@ -109,7 +109,7 @@ export function isDone(id: string) {
 
 export function isCharUnlocked(id: CharId) {
   const c = CHARACTERS.find((x) => x.id === id)!;
-  if (c.goldUnlock) return loadSave().meihua.unlocked;
+  if (c.unlock === 'all') return ACHIEVEMENTS.every((x) => isDone(x.id));
   return !c.unlock || isDone(c.unlock);
 }
 
@@ -130,6 +130,13 @@ export function unlockLabel(achId: string): { text: string; color: number } | nu
   const names = [c?.name, m?.name].filter(Boolean);
   if (!names.length) return null;
   return { text: names.join('、'), color: c?.color ?? m!.accent };
+}
+
+/** How a locked character is unlocked, as display text. */
+export function charUnlockText(c: { unlock?: string }): string | null {
+  if (!c.unlock) return null;
+  if (c.unlock === 'all') return '完成全部成就';
+  return ACHIEVEMENT_BY_ID[c.unlock]?.desc ?? null;
 }
 
 /** Characters unlocked by an achievement. */
