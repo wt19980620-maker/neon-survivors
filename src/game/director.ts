@@ -1,6 +1,6 @@
 import type { AffixId, BossId, EnemyKind } from './data';
 import {
-  AFFIX_IDS, AFFIXES, BOSSES, BOSS_IDS, CHAMPION, ENDLESS_BOSS_EVERY, ENDLESS_BOSS_SCALE, ENDLESS_EVENT_EVERY, MID_BOSSES, RUN_LENGTH,
+  ARENA, AFFIX_IDS, AFFIXES, BOSSES, BOSS_IDS, CHAMPION, ENDLESS_BOSS_EVERY, ENDLESS_BOSS_SCALE, ENDLESS_EVENT_EVERY, MID_BOSSES, RUN_LENGTH,
 } from './data';
 import { sfx } from './audio';
 import type { GameScene } from '../scenes/GameScene';
@@ -22,6 +22,10 @@ export class Director {
   /** endless bosses spawned so far (the regular two don't count) */
   bossWave = 0;
   private lastBoss: BossId = 'void';
+  // Boss 竞技场: next queued boss (-1 = none queued), next forced extra, bosses so far
+  private arenaNext: number = ARENA.firstBoss;
+  private arenaExtra: number = ARENA.firstBoss + ARENA.extraEvery;
+  arenaCount = 0;
 
   constructor(private readonly g: GameScene) {
     this.events = [
@@ -58,14 +62,17 @@ export class Director {
     const g = this.g;
     const t = g.elapsed;
 
+    const arena = !!g.mapDef.bossRush;
     for (const ev of this.events) {
       if (!ev.done && t >= ev.t) {
         ev.done = true;
-        ev.run();
+        // the arena keeps its own boss stream; only the final boss (the standard-mode goal) stays scripted
+        if (!arena || ev.t === RUN_LENGTH) ev.run();
       }
     }
+    if (arena) this.arena(t);
 
-    if (g.mode === 'endless' && t >= RUN_LENGTH) {
+    if (g.mode === 'endless' && t >= RUN_LENGTH && !arena) {
       if (t >= this.nextBoss) {
         this.nextBoss += ENDLESS_BOSS_EVERY;
         this.bossWave++;
@@ -88,7 +95,7 @@ export class Director {
     }
 
     const m = t / 60;
-    const rate = (2 + m * 2.5 + m * m * 0.15) * (g.bossAlive() ? 0.6 : 1);
+    const rate = (2 + m * 2.5 + m * m * 0.15) * (g.bossAlive() ? 0.6 : 1) * (arena ? ARENA.spawnMult : 1);
     const cap = Math.min(450, 50 + t * 1.0);
     this.acc += rate * dt;
     while (this.acc >= 1) {
@@ -185,13 +192,38 @@ export class Director {
     pool[Math.floor(Math.random() * pool.length)]();
   }
 
-  private boss(id: BossId, hpScale = 1) {
+  /** Boss 竞技场: the next boss arrives shortly after the last one falls, plus a regular extra. */
+  private arena(t: number) {
+    const alive = this.g.bosses.filter((b) => b.alive).length;
+    if (alive === 0 && this.arenaNext < 0) this.arenaNext = t + ARENA.gap;
+    if (this.arenaNext >= 0 && t >= this.arenaNext && alive < ARENA.maxAlive) {
+      this.arenaNext = -1;
+      this.arenaBoss(t);
+    }
+    if (t >= this.arenaExtra) {
+      this.arenaExtra += ARENA.extraEvery;
+      if (alive > 0 && alive < ARENA.maxAlive) this.arenaBoss(t);
+    }
+  }
+
+  private arenaBoss(t: number) {
+    // before the final boss only the mid bosses come (beating the void lord ends a standard run)
+    const pool = t < RUN_LENGTH ? MID_BOSSES : BOSS_IDS;
+    const id = pick(pool.length > 1 ? pool.filter((b) => b !== this.lastBoss) : pool);
+    const m = t / 60;
+    // start weak enough for a fresh build, reach full strength around the final boss and keep growing
+    const hp = 0.06 + 0.09 * m + 0.01 * m * m;
+    this.arenaCount++;
+    this.boss(id, hp, Math.min(1.2, 0.45 + 0.045 * m), Math.min(1, hp), `第 ${this.arenaCount} 位挑战者`);
+  }
+
+  private boss(id: BossId, hpScale = 1, dmgScale = 1, reward = 1, title?: string) {
     const g = this.g;
     const p = g.spawnPoint();
-    g.spawnEnemy('boss', p.x, p.y, { boss: id, hpScale });
+    g.spawnEnemy('boss', p.x, p.y, { boss: id, hpScale, dmgScale, reward });
     this.lastBoss = id;
     const def = BOSSES[id];
-    const title = this.bossWave > 0 ? `第 ${this.bossWave} 波首领` : id === 'void' ? '最终首领' : '首领来袭';
+    title ??= this.bossWave > 0 ? `第 ${this.bossWave} 波首领` : id === 'void' ? '最终首领' : '首领来袭';
     g.ui()?.banner(`${title} · ${def.name}`, true, def.color);
     sfx.play('boss');
     g.shake(400, 0.006);

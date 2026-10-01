@@ -131,6 +131,7 @@ export class GameScene extends Phaser.Scene {
   private boss1Killed = false;
   private boss2Killed = false;
   private bossKinds = new Set<BossId>();
+  private arenaKills = 0;
   /** stacks of each limit break taken this run */
   limitBreaks = new Map<LimitBreakId, number>();
   private freeLabels: Phaser.GameObjects.Text[] = [];
@@ -218,9 +219,10 @@ export class GameScene extends Phaser.Scene {
     this.keys = this.input.keyboard!.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT') as Record<string, Phaser.Input.Keyboard.Key>;
 
     this.director = new Director(this);
+    if (char.custom) this.loadMeihua();
+    else this.addItem(char.weapon);
     this.recomputeStats();
     this.hp = this.stats.maxHp;
-    this.addItem(char.weapon);
 
     // phones: switching apps / locking the screen fires visibilitychange rather than blur
     const onBlur = () => this.requestPause();
@@ -261,6 +263,7 @@ export class GameScene extends Phaser.Scene {
     this.affixed = [];
     this.freeLabels = [];
     this.bossKinds = new Set();
+    this.arenaKills = 0;
     this.limitBreaks = new Map();
     this.numbers = [];
     this.lightning = [];
@@ -436,7 +439,10 @@ export class GameScene extends Phaser.Scene {
     return this.bosses.length > 0;
   }
 
-  spawnEnemy(kind: EnemyKind, x: number, y: number, opts: { elite?: boolean; boss?: BossId; hpScale?: number; affixes?: AffixId[] } = {}) {
+  spawnEnemy(
+    kind: EnemyKind, x: number, y: number,
+    opts: { elite?: boolean; boss?: BossId; hpScale?: number; dmgScale?: number; reward?: number; affixes?: AffixId[] } = {},
+  ) {
     const def = ENEMY_DEFS[kind];
     const e = this.enemyPool.get();
     const d = this.director;
@@ -484,7 +490,8 @@ export class GameScene extends Phaser.Scene {
     if (opts.boss) {
       const b = BOSSES[opts.boss];
       hp = b.hp * this.mapDef.hpMult * (opts.hpScale ?? 1);
-      damage = b.damage;
+      damage = b.damage * (opts.dmgScale ?? 1);
+      e.reward = opts.reward ?? 1;
       speed = b.speed;
       scale = b.scale;
       tex = b.tex;
@@ -1094,12 +1101,14 @@ export class GameScene extends Phaser.Scene {
       this.shake(500, 0.012);
       this.addRing(e.x, e.y, 300, bossColor, 0.8);
       if (e.bossId) this.bossKinds.add(e.bossId);
-      this.dropPickup('chest', e.x, e.y, 1);
+      // the arena's endless boss stream would hand out a chest every few seconds: every other one
+      if (!this.mapDef.bossRush || this.arenaKills++ % 2 === 0) this.dropPickup('chest', e.x, e.y, 1);
+      const gem = Math.max(3, Math.round(12 * e.reward));
       for (let i = 0; i < 16; i++) {
         const a = (i / 16) * TAU;
-        this.dropPickup('gem', e.x + Math.cos(a) * 60, e.y + Math.sin(a) * 60, 12);
+        this.dropPickup('gem', e.x + Math.cos(a) * 60, e.y + Math.sin(a) * 60, gem);
       }
-      this.coins += e.finalBoss ? 60 : 30;
+      this.coins += Math.max(5, Math.round((e.finalBoss ? 60 : 30) * e.reward));
       if (e.finalBoss) this.boss2Killed = true;
       else this.boss1Killed = true;
       // endless: the final boss is just another milestone
@@ -1259,6 +1268,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gainXp(v: number) {
+    // 梅花花 never levels: her power is bought with gold between runs
+    if (CHAR_BY_ID[this.charId].custom) return;
     this.xp += v * this.stats.growth;
     let need = xpToNext(this.level);
     while (this.xp >= need) {
@@ -1334,6 +1345,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   rollOptions(n = 3): UpgradeOption[] {
+    if (CHAR_BY_ID[this.charId].custom) {
+      // 梅花花's chests can still evolve (handled before this), otherwise they don't touch the bought loadout
+      return [
+        { id: 'heal', name: '治愈', icon: 'icon_heal', color: COLORS.heart, isNew: false, levelText: '', desc: '回复 50% 最大生命' },
+        { id: 'gold', name: '金币袋', icon: 'icon_coin', color: COLORS.coin, isNew: false, levelText: '', desc: '获得 25 金币' },
+      ];
+    }
     const weaponsOwned = this.weapons.length;
     const passivesOwned = this.passiveOrder.length;
     const pool: { id: ItemId; w: number }[] = [];
@@ -1425,6 +1443,20 @@ export class GameScene extends Phaser.Scene {
       if (w) w.level = lvl + 1;
       this.recomputeStats();
     }
+  }
+
+  /** 梅花花: start with the weapons, passives and limit breaks bought in 局外强化. */
+  private loadMeihua() {
+    const m = loadSave().meihua;
+    const weapons = m.weapons.length ? m.weapons : (['bolt'] as WeaponId[]);
+    for (const id of [...weapons, ...m.passives]) {
+      this.addItem(id);
+      const lvl = Math.max(1, m.levels[id] ?? 1);
+      this.itemLevels.set(id, lvl);
+      const w = this.weapons.find((x) => x.id === id);
+      if (w) w.level = lvl;
+    }
+    for (const [id, n] of Object.entries(m.lb)) if (n) this.limitBreaks.set(id as LimitBreakId, n);
   }
 
   private addItem(id: ItemId) {

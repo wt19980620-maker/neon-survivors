@@ -109,6 +109,7 @@ export function isDone(id: string) {
 
 export function isCharUnlocked(id: CharId) {
   const c = CHARACTERS.find((x) => x.id === id)!;
+  if (c.goldUnlock) return loadSave().meihua.unlocked;
   return !c.unlock || isDone(c.unlock);
 }
 

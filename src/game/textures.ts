@@ -319,6 +319,16 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
     assassin: (ctx, cx, cy) => poly(ctx, cx, cy, 14, 4),
     storm: (ctx, cx, cy) => star(ctx, cx, cy, 15, 7, 5, -Math.PI / 2),
     pyro: (ctx, cx, cy) => poly(ctx, cx, cy + 2, 15, 3, -Math.PI / 2),
+    meihua: (ctx, cx, cy) => {
+      // plum blossom: five round petals
+      for (let k = 0; k < 5; k++) {
+        const a = -Math.PI / 2 + (k / 5) * Math.PI * 2;
+        const px = cx + Math.cos(a) * 8;
+        const py = cy + Math.sin(a) * 8;
+        ctx.moveTo(px + 6.5, py);
+        ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+      }
+    },
     caller: (ctx, cx, cy) => {
       // little ghost: round head, wavy hem
       ctx.moveTo(cx - 12, cy + 12);

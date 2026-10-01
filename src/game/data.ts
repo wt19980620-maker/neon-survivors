@@ -457,7 +457,7 @@ export const ENDLESS_EVENT_EVERY = 75;
 
 // ---------------------------------------------------------------- characters
 
-export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro' | 'wind' | 'caller';
+export type CharId = 'runner' | 'guardian' | 'assassin' | 'storm' | 'monk' | 'pyro' | 'astro' | 'wind' | 'caller' | 'meihua';
 
 /** Multipliers default to 1, additive bonuses to 0. */
 export interface CharMods {
@@ -484,6 +484,10 @@ export interface CharDef {
   mods: CharMods;
   /** achievement that unlocks this character; none = available from the start */
   unlock?: string;
+  /** bought with gold in 局外强化 instead of an achievement */
+  goldUnlock?: number;
+  /** gains no experience: starts each run with a loadout bought with gold (梅花花) */
+  custom?: boolean;
 }
 
 export const CHARACTERS: CharDef[] = [
@@ -520,13 +524,33 @@ export const CHARACTERS: CharDef[] = [
     id: 'caller', name: '唤灵师', color: 0xffb8e8, weapon: 'spirit', desc: '召唤更多，但单体更弱',
     mods: { amount: 1, might: 0.85, hp: 0.9 }, unlock: 'kills_1k',
   },
+  {
+    // weapon is only a placeholder: her loadout is bought in 局外强化
+    id: 'meihua', name: '梅花花', color: 0xff5fa2, weapon: 'bolt', desc: '无法获得经验，靠金币打造',
+    mods: {}, goldUnlock: 1000, custom: true,
+  },
 ];
+
+/** 梅花花: gold prices for her permanent loadout. Levels are the item's current level. */
+export const MEIHUA = {
+  unlock: 1000,
+  maxWeapons: 4,
+  maxPassives: 5,
+  buyWeapon: 100,
+  buyPassive: 80,
+  /** upgrade price = per-level × current level */
+  weaponPerLevel: 60,
+  passivePerLevel: 50,
+  /** limit break price = base + step × stacks already bought (all kinds together) */
+  lbBase: 150,
+  lbStep: 50,
+};
 
 export const CHAR_BY_ID = Object.fromEntries(CHARACTERS.map((c) => [c.id, c])) as Record<CharId, CharDef>;
 
 // ---------------------------------------------------------------- maps
 
-export type MapId = 'grid' | 'crystal' | 'abyss';
+export type MapId = 'grid' | 'crystal' | 'abyss' | 'arena';
 
 export interface MapDef {
   id: MapId;
@@ -545,6 +569,8 @@ export interface MapDef {
   goldMult: number;
   /** achievement that unlocks this map; none = available from the start */
   unlock?: string;
+  /** bosses keep coming one after another (Boss 竞技场) */
+  bossRush?: boolean;
 }
 
 export const MAPS: MapDef[] = [
@@ -563,7 +589,24 @@ export const MAPS: MapDef[] = [
     bg: 0x0e0508, grid: 0x3a1420, accent: 0xff5a36, obstacle: 'ruin', density: 1.1, radius: [48, 80],
     hpMult: 1.45, speedMult: 1.1, goldMult: 1.6, unlock: 'win',
   },
+  {
+    id: 'arena', name: 'Boss 竞技场', desc: '首领接连不断地出现',
+    bg: 0x0c0610, grid: 0x33183a, accent: 0xffd24d, obstacle: 'pillar', density: 0.35, radius: [30, 44],
+    hpMult: 1, speedMult: 1, goldMult: 2, unlock: 'boss_all', bossRush: true,
+  },
 ];
+
+/** Boss 竞技场 pacing */
+export const ARENA = {
+  firstBoss: 20,
+  /** seconds after a boss dies before the next one */
+  gap: 4,
+  /** an extra boss joins this often even while one is alive */
+  extraEvery: 90,
+  maxAlive: 3,
+  /** ordinary spawns are thinned out */
+  spawnMult: 0.5,
+};
 
 export const MAP_BY_ID = Object.fromEntries(MAPS.map((m) => [m.id, m])) as Record<MapId, MapDef>;
 

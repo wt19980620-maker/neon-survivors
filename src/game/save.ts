@@ -1,4 +1,14 @@
-import type { BossId, CharId, GameMode, MapId, MetaId, WeaponId } from './data';
+import type { BossId, CharId, GameMode, LimitBreakId, MapId, MetaId, PassiveId, WeaponId } from './data';
+
+/** 梅花花's permanent loadout, bought with gold */
+export interface MeihuaSave {
+  unlocked: boolean;
+  /** purchase order = slot order */
+  weapons: WeaponId[];
+  passives: PassiveId[];
+  levels: Partial<Record<WeaponId | PassiveId, number>>;
+  lb: Partial<Record<LimitBreakId, number>>;
+}
 
 /** Lifetime totals, used by achievements. Only updated when a run ends. */
 export interface LifetimeStats {
@@ -40,6 +50,7 @@ export interface SaveData {
   playerId: string;
   /** optional code shared with friends for a private board */
   friendGroup: string;
+  meihua: MeihuaSave;
 }
 
 const KEY = 'neon-survivors-save-v1';
@@ -64,6 +75,7 @@ function defaults(): SaveData {
     nickname: '',
     playerId: '',
     friendGroup: '',
+    meihua: { unlocked: false, weapons: [], passives: [], levels: {}, lb: {} },
   };
 }
 
@@ -84,6 +96,7 @@ export function loadSave(): SaveData {
         stats: { ...data.stats, ...(parsed.stats ?? {}) },
         meta: { ...(parsed.meta ?? {}) },
         achievements: [...(parsed.achievements ?? [])],
+        meihua: { ...data.meihua, ...(parsed.meihua ?? {}) },
       };
       // the on/off music toggle became a volume setting
       if (parsed.music === false && parsed.musicVolume === undefined) {

@@ -61,6 +61,8 @@ export class Enemy implements Pooled {
   boss = false;
   finalBoss = false;
   bossId: BossId | null = null;
+  /** boss loot multiplier: arena bosses start weak, so they drop less */
+  reward = 1;
   /** ordinary enemy promoted with a single affix */
   champion = false;
   affixes: AffixId[] = [];
