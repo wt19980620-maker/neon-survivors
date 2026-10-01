@@ -1244,7 +1244,13 @@ interface SlashFx {
   life: number;
   max: number;
   scale: number;
+  /** final angle; the arc sweeps into it */
+  ang: number;
+  peak: number;
 }
+
+/** Slash look: long, soft and dim so frequent swings don't strobe. */
+const SLASH_FX = { life: 0.42, fadeIn: 0.08, sweep: 0.45, peak: 0.75, evolvedPeak: 0.55 };
 
 const SLASH_ARC = (65 * Math.PI) / 180;
 /** radius the slash textures are drawn at; sprites scale from it to the real reach */
@@ -1285,8 +1291,14 @@ class SwordWeapon extends Weapon {
     for (const f of this.fx) {
       if (f.life <= 0) continue;
       f.life -= dt;
-      const k = Math.max(0, f.life / f.max);
-      f.img.setPosition(g.px, g.py).setAlpha(k).setScale(f.scale * (1.08 - 0.08 * k));
+      const t = f.max - f.life;
+      const p = Math.min(1, t / f.max);
+      // quick fade in, slow ease-out fade; the arc swings into place and grows a touch
+      const swing = 1 - (1 - Math.min(1, p / 0.6)) ** 3;
+      const alpha = f.peak * Math.min(1, t / SLASH_FX.fadeIn) * (1 - p) ** 1.6;
+      f.img.setPosition(g.px, g.py).setAlpha(alpha)
+        .setRotation(f.ang - SLASH_FX.sweep * (1 - swing))
+        .setScale(f.scale * (0.92 + 0.12 * swing));
       if (f.life <= 0) f.img.setVisible(false);
     }
   }
@@ -1316,19 +1328,26 @@ class SwordWeapon extends Weapon {
     }
     const tex = this.evolved ? 'slash_evo' : 'slash';
     for (let i = 0; i < n; i++) this.spawnFx(tex, face + (i / n) * TAU, reach);
-    if (full) g.addRing(g.px, g.py, reach, this.evolved ? EVOLUTIONS.sword.color : COLORS.sword, 0.3);
+    // only counter-slashes get the ring burst; a ring on every swing flashed too much
+    if (mult > 1) g.addRing(g.px, g.py, reach, this.evolved ? EVOLUTIONS.sword.color : COLORS.sword, 0.45);
     sfx.play('disc');
   }
 
   private spawnFx(tex: string, ang: number, reach: number) {
     let f = this.fx.find((x) => x.life <= 0);
     if (!f) {
-      f = { img: this.g.add.image(0, 0, tex).setDepth(DEPTH_PROJ + 2).setBlendMode(Phaser.BlendModes.ADD), life: 0, max: 0.18, scale: 1 };
+      f = {
+        img: this.g.add.image(0, 0, tex).setDepth(DEPTH_PROJ + 2).setBlendMode(Phaser.BlendModes.ADD),
+        life: 0, max: SLASH_FX.life, scale: 1, ang: 0, peak: 1,
+      };
       this.fx.push(f);
     }
-    f.life = f.max;
+    f.life = f.max = SLASH_FX.life;
+    f.ang = ang;
+    f.peak = this.evolved ? SLASH_FX.evolvedPeak : SLASH_FX.peak;
     f.scale = (reach / SLASH_TEX_R) * texScale();
-    f.img.setTexture(tex).setVisible(true).setRotation(ang).setPosition(this.g.px, this.g.py).setScale(f.scale).setAlpha(1);
+    f.img.setTexture(tex).setVisible(true).setRotation(ang - SLASH_FX.sweep).setPosition(this.g.px, this.g.py)
+      .setScale(f.scale * 0.92).setAlpha(0);
   }
 
   /** Lv5 and evolved: getting hit answers with a full-circle slash (the evolved blade twice). */

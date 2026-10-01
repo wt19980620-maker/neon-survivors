@@ -689,8 +689,9 @@ export function generateTextures(scene: Phaser.Scene, scale = 1) {
         ctx.arc(cx, cy, 50, -a, a);
         ctx.arc(cx - 10, cy, 36, a * 0.9, -a * 0.9, true);
         ctx.closePath();
-      }, { fill: 0.45, line: 2, blur: 12 });
-      neon(ctx, 0xffffff, () => ctx.arc(cx, cy, 48, -a * 0.8, a * 0.8), { fill: 0, line: 1.5, blur: 6 });
+      }, { fill: 0.3, line: 1.6, blur: 10 });
+      // a thin leading edge in the same colour (a white one read as a camera flash)
+      neon(ctx, color, () => ctx.arc(cx, cy, 48, -a * 0.8, a * 0.8), { fill: 0, line: 1.2, blur: 4 });
     });
   slash('slash', COLORS.sword);
   slash('slash_evo', E.sword.color);
