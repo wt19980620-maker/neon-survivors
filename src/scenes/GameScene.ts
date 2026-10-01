@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   AFFIXES, AFFIX_TUNING, BOSSES, CHAMPION, CHAR_BY_ID, ENEMY_DEFS, MAPS, MAP_BY_ID, EVOLUTIONS, EVOLVES_WEAPONS, ITEMS, MAX_PASSIVES, MAX_WEAPONS,
   PASSIVE_IDS, WEAPON_IDS, xpToNext,
+  LB, LIMIT_BREAKS, type LimitBreakId,
   type AffixId, type BossId, type CharId, type EnemyKind, type GameMode, type MapDef, type MapId, type ItemId, type PassiveId, type WeaponId,
 } from '../game/data';
 import {
@@ -27,6 +28,8 @@ import type { UIScene } from './UIScene';
 const TAU = Math.PI * 2;
 const PLAYER_R = 12;
 
+const isLimitBreak = (id: string): id is LimitBreakId => id.startsWith('lb_');
+
 export interface Stats {
   maxHp: number;
   regen: number;
@@ -42,7 +45,7 @@ export interface Stats {
 }
 
 export interface UpgradeOption {
-  id: ItemId | 'heal' | 'gold' | 'evolve';
+  id: ItemId | 'heal' | 'gold' | 'evolve' | LimitBreakId;
   name: string;
   icon: string;
   color: number;
@@ -128,6 +131,8 @@ export class GameScene extends Phaser.Scene {
   private boss1Killed = false;
   private boss2Killed = false;
   private bossKinds = new Set<BossId>();
+  /** stacks of each limit break taken this run */
+  limitBreaks = new Map<LimitBreakId, number>();
   private freeLabels: Phaser.GameObjects.Text[] = [];
   private achTimer = 1;
   private runAchievements: AchievementDef[] = [];
@@ -256,6 +261,7 @@ export class GameScene extends Phaser.Scene {
     this.affixed = [];
     this.freeLabels = [];
     this.bossKinds = new Set();
+    this.limitBreaks = new Map();
     this.numbers = [];
     this.lightning = [];
     this.emitters = new Map();
@@ -1376,15 +1382,29 @@ export class GameScene extends Phaser.Scene {
       });
     }
     if (out.length === 0) {
-      out.push(
-        { id: 'heal', name: '治愈', icon: 'icon_heal', color: COLORS.heart, isNew: false, levelText: '', desc: '回复 50% 最大生命' },
-        { id: 'gold', name: '金币袋', icon: 'icon_coin', color: COLORS.coin, isNew: false, levelText: '', desc: '获得 25 金币' },
-      );
+      // build complete: stackable limit breaks keep each level worth something
+      const pool = LIMIT_BREAKS.slice();
+      while (out.length < n && pool.length) {
+        const lb = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+        const have = this.limitBreaks.get(lb.id) ?? 0;
+        out.push({ id: lb.id, name: lb.name, icon: lb.icon, color: lb.color, isNew: false, levelText: `${have} → ${have + 1}`, desc: lb.desc });
+      }
+      // a heal stays on offer when it's needed
+      if (this.hp < this.stats.maxHp * 0.5) {
+        out[out.length - 1] = { id: 'heal', name: '治愈', icon: 'icon_heal', color: COLORS.heart, isNew: false, levelText: '', desc: '回复 50% 最大生命' };
+      }
     }
     return out;
   }
 
   private applyOption(opt: UpgradeOption) {
+    if (isLimitBreak(opt.id)) {
+      const id = opt.id;
+      this.limitBreaks.set(id, (this.limitBreaks.get(id) ?? 0) + 1);
+      // recomputeStats() also hands over the extra max hp from 突破·活力 as healing
+      this.recomputeStats();
+      return;
+    }
     if (opt.id === 'heal') {
       this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * 0.5);
       return;
@@ -1417,16 +1437,17 @@ export class GameScene extends Phaser.Scene {
   private recomputeStats() {
     const L = (id: ItemId) => this.itemLevels.get(id) ?? 0;
     const m = CHAR_BY_ID[this.charId].mods;
+    const B = (id: LimitBreakId) => this.limitBreaks.get(id) ?? 0;
     const prevMax = this.hasStats ? this.stats.maxHp : undefined;
     this.hasStats = true;
     this.stats = {
-      maxHp: Math.round((100 + metaRank('hp') * 10 + L('vitality') * 20) * (m.hp ?? 1)),
+      maxHp: Math.round((100 + metaRank('hp') * 10 + L('vitality') * 20) * (m.hp ?? 1)) + B('lb_hp') * LB.hp,
       regen: L('vitality') * 0.3 + (m.regen ?? 0),
       speed: 165 * (1 + L('speed') * 0.08 + metaRank('speed') * 0.05) * (m.speed ?? 1),
-      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15) * (m.magnet ?? 1),
-      might: (1 + L('might') * 0.1 + metaRank('might') * 0.05) * (m.might ?? 1),
-      haste: (1 - L('haste') * 0.08) * (m.cooldown ?? 1),
-      area: (1 + L('area') * 0.1) * (m.area ?? 1),
+      magnet: 100 * (1 + L('magnet') * 0.3 + metaRank('magnet') * 0.15) * (m.magnet ?? 1) * (1 + B('lb_magnet') * LB.magnet),
+      might: (1 + L('might') * 0.1 + metaRank('might') * 0.05) * (m.might ?? 1) * (1 + B('lb_might') * LB.might),
+      haste: Math.max(LB.minHaste, (1 - L('haste') * 0.08) * (m.cooldown ?? 1) * LB.haste ** B('lb_haste')),
+      area: (1 + L('area') * 0.1) * (m.area ?? 1) * (1 + B('lb_area') * LB.area),
       amount: L('amount') + (m.amount ?? 0),
       armor: L('armor') + (m.armor ?? 0),
       growth: (1 + L('growth') * 0.1 + metaRank('growth') * 0.05) * (m.growth ?? 1),

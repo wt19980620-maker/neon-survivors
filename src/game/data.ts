@@ -423,9 +423,35 @@ export const RUN_LENGTH = 600; // seconds until the final boss arrives
 
 /** standard: beat the final boss to win; endless: bosses keep coming until you fall */
 export type GameMode = 'standard' | 'endless';
-/** endless: seconds between bosses after the final boss, and how much tougher each one gets */
+/** endless: seconds between bosses after the final boss, and how much tougher each one gets (linear per wave) */
 export const ENDLESS_BOSS_EVERY = 240;
-export const ENDLESS_BOSS_SCALE = 1.6;
+export const ENDLESS_BOSS_SCALE = 0.75;
+
+// ---------------------------------------------------------------- limit breaks
+
+/**
+ * Once every weapon and passive is maxed, level-ups offer these stackable bonuses instead,
+ * so a long endless run keeps getting stronger. Values are per stack.
+ */
+export type LimitBreakId = 'lb_might' | 'lb_haste' | 'lb_area' | 'lb_hp' | 'lb_magnet';
+
+export interface LimitBreakDef {
+  id: LimitBreakId;
+  name: string;
+  icon: string;
+  color: number;
+  desc: string;
+}
+
+export const LIMIT_BREAKS: LimitBreakDef[] = [
+  { id: 'lb_might', name: '突破·力量', icon: 'icon_might', color: 0xff6b6b, desc: '所有伤害 +8%' },
+  { id: 'lb_haste', name: '突破·急速', icon: 'icon_haste', color: 0x7cf8ff, desc: '武器冷却 -4%' },
+  { id: 'lb_area', name: '突破·领域', icon: 'icon_area', color: 0xb58cff, desc: '攻击范围 +6%' },
+  { id: 'lb_hp', name: '突破·活力', icon: 'icon_vitality', color: 0xff6b8b, desc: '最大生命 +15，并回复 15' },
+  { id: 'lb_magnet', name: '突破·磁力', icon: 'icon_magnet', color: 0xff9a3d, desc: '拾取范围 +15%' },
+];
+
+export const LB = { might: 0.08, haste: 0.96, area: 0.06, hp: 15, magnet: 0.15, minHaste: 0.45 };
 /** endless: seconds between random swarm events after RUN_LENGTH */
 export const ENDLESS_EVENT_EVERY = 75;
 

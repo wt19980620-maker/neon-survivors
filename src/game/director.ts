@@ -39,7 +39,11 @@ export class Director {
   /** Enemy stat multipliers grow with time so the pressure keeps pace with the build. */
   hpMult(t = this.g.elapsed) {
     const m = t / 60;
-    return (1 + m * 0.3 + m * m * 0.035) * this.g.mapDef.hpMult;
+    const curve = (x: number) => 1 + x * 0.3 + x * x * 0.035;
+    // past the regular run length (endless only) the full quadratic would outrun any build;
+    // a gentler curve lets limit breaks keep up for a while, then pulls ahead again
+    const k = m <= 10 ? curve(m) : curve(10) + (m - 10) * 0.9 + (m - 10) ** 2 * 0.03;
+    return k * this.g.mapDef.hpMult;
   }
 
   dmgMult(t = this.g.elapsed) {
@@ -66,7 +70,7 @@ export class Director {
         this.nextBoss += ENDLESS_BOSS_EVERY;
         this.bossWave++;
         // any boss but the previous one, each wave tougher than the last
-        this.boss(pick(BOSS_IDS.filter((b) => b !== this.lastBoss)), ENDLESS_BOSS_SCALE ** this.bossWave);
+        this.boss(pick(BOSS_IDS.filter((b) => b !== this.lastBoss)), 1 + ENDLESS_BOSS_SCALE * this.bossWave);
       }
       if (t >= this.nextEvent) {
         this.nextEvent += ENDLESS_EVENT_EVERY;
